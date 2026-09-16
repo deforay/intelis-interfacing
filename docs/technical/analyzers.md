@@ -42,6 +42,22 @@ does not tell you whether there is a number to read.
 - Empty sessions — `<ENQ>` then `<EOT>` with nothing between — are normal
   between runs, as is a stray NUL byte.
 
+## Roche COBAS AmpliPrep/TaqMan 96 — ASTM
+
+Taken from AMPLILINK 3.3.5 logs, which hold the records but not the framing.
+TaqMan sends no checksums, so configure it as ASTM without checksum.
+
+- One message per sample: `H`, `P`, `O`, one `R`, several `C`, `L`.
+- `R.3` is the result as printed: `Target Not Detected`, or a mantissa with its
+  log value in brackets, `2.52E+3 (3.40)`. `R.4` is `cp/mL`, and empty when no
+  target was detected.
+- The `C` records carry `Accepted` and the instrument flags, such as
+  `TM40^ STEP_CORR-2`. They are stored in the notes.
+- `R.8` is `V` (verified), not `F`, so results are stored as not final. `O.4`
+  names the test `^^^ALL`, so the test type is stored as `ALL`. The assay code,
+  `HI2CAP96`, is only in `R.2`. Whether either should change is open until a
+  TaqMan laboratory confirms what its LIS expects.
+
 ## Abbott Alinity m — HL7
 
 - **`SPM.2` and `SPM.3` are always empty.** The sample identifier is in `SAC.3`.

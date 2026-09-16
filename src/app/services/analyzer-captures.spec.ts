@@ -23,6 +23,9 @@ import {
   COBAS_4800_RESULT_TIME_FORMATTED, COBAS_4800_RUN, cobas4800Query, cobas4800Run
 } from '../testing/fixtures/captured/roche-cobas-4800';
 import {
+  TAQMAN_COMPLETED_TIME_FORMATTED, TAQMAN_LAB, TAQMAN_SAMPLES, taqmanFrames, taqmanMessage, taqmanSession
+} from '../testing/fixtures/captured/roche-cobas-taqman';
+import {
   GENEXPERT_END_TIME_FORMATTED, GENEXPERT_FR_END_TIME_FORMATTED, GENEXPERT_FR_OPERATOR, GENEXPERT_FR_TESTS,
   GENEXPERT_TESTS, genexpertFrMessage, genexpertFrames, genexpertMessage, genexpertSession
 } from '../testing/fixtures/captured/cepheid-genexpert';
@@ -394,5 +397,55 @@ describe('Cepheid GeneXpert 6.5 French capture (ASTM)', () => {
     }
 
     expect(wire.saved().map(result => [result.order_id, result.test_type, result.results, result.test_unit, result.notes])).toEqual(expected);
+  });
+});
+
+describe('Roche COBAS TaqMan 96 capture (ASTM, no checksums)', () => {
+  const expectResults = (results: any[]) => {
+    expect(results.map(result => [result.order_id, result.results, result.test_unit, result.notes])).toEqual([
+      ['TM-0001/26', 'Target Not Detected', '', 'Accepted | STEP_CORR-2 | RFITOOLOW-1'],
+      ['TM-0002/26', 'Target Not Detected', '', 'Accepted | STEP_CORR-2 | RFITOOLOW-1'],
+      ['TM-0003/26', 'Target Not Detected', '', 'Accepted | STEP_CORR-2 | RFITOOLOW-1'],
+      ['TM-0004/26', '2.52E+3 (3.40)', 'cp/mL', 'Accepted | STEP_CORR-2 | SPK_CORR-2']
+    ]);
+    for (const result of results) {
+      expect(result, result.order_id).toMatchObject({
+        test_id: result.order_id,
+        tested_by: TAQMAN_LAB,
+        analysed_date_time: TAQMAN_COMPLETED_TIME_FORMATTED,
+        // Undecided, pinned as stored today: see the fixture. A change to
+        // either must be a decision, not a side effect.
+        test_type: 'ALL',
+        result_status: 0
+      });
+      expect(result.results, result.order_id).not.toMatch(/[\x00-\x1f]/);
+      expect(result.raw_text, result.order_id).not.toMatch(/[\x02\x03]/);
+    }
+  };
+
+  it('stores every result when each session arrives in a single read', () => {
+    const wire = createWireHarness({ protocol: 'astm-nonchecksum', machineType: 'roche-cobas-taqman' });
+
+    for (const sample of TAQMAN_SAMPLES) {
+      wire.receive(taqmanSession(sample));
+    }
+
+    expectResults(wire.saved());
+    expect(wire.raw()).toHaveLength(TAQMAN_SAMPLES.length);
+    expect(wire.failures()).toEqual([]);
+  });
+
+  it('stores the same results when every frame arrives in its own read', () => {
+    const wire = createWireHarness({ protocol: 'astm-nonchecksum', machineType: 'roche-cobas-taqman' });
+
+    for (const sample of TAQMAN_SAMPLES) {
+      wire.receive(ENQ);
+      for (const frame of taqmanFrames(taqmanMessage(sample))) {
+        wire.receive(frame);
+      }
+      wire.receive(EOT);
+    }
+
+    expectResults(wire.saved());
   });
 });
