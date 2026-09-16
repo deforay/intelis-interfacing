@@ -17,7 +17,7 @@ import { MatCheckboxChange } from '@angular/material/checkbox';
 import { fromEvent, Subscription } from 'rxjs';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { debounceTime, distinctUntilChanged, shareReplay, map, filter } from 'rxjs/operators';
+import { debounceTime, distinctUntilChanged, map } from 'rxjs/operators';
 import { LogDisplayService, LogEntry } from '../../services/log-display.service';
 import { BACKGROUND_INTERVAL_MS } from '../../constants/domain.constants';
 

@@ -39,7 +39,7 @@ export class HomeComponent {
       }
 
     } else {
-      const myNotification = new Notification('Error', {
+      new Notification('Error', {
         body: 'Oops! Please enter valid login credentials.'
       });
       this.router.navigate(['']);

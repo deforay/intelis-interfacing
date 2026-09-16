@@ -307,7 +307,6 @@ export class ConnectionManagerService implements OnDestroy {
     const instrumentFromMap = this.activeInstruments.get(instrument.connectionParams.instrumentId);
     if (instrumentFromMap) {
       instrumentFromMap.connectionInProcess = true;
-      const isTcpServer = instrumentFromMap.connectionParams.connectionMode === 'tcpserver';
       instrumentFromMap.instrumentButtonText = 'Waiting for port...';
       instrumentFromMap.statusText = `Waiting for port ${instrument.connectionParams.port} to be released...`;
       this.notifyInstrumentsChanged();
