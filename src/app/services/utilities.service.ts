@@ -3,6 +3,8 @@ import { DatabaseService } from './database.service';
 import { BehaviorSubject, Observable, of } from 'rxjs';
 import { ElectronService } from '../core/services';
 import { LoggingService, LogOptions } from './logging.service';
+import { ElectronStoreService } from './electron-store.service';
+import { formatDisplayDateTime } from '../../../shared/date-display';
 
 type LogLevel = 'info' | 'success' | 'warn' | 'error' | 'verbose';
 
@@ -29,7 +31,8 @@ export class UtilitiesService {
   constructor(
     private readonly electronService: ElectronService,
     private readonly dbService: DatabaseService,
-    private readonly loggingService: LoggingService
+    private readonly loggingService: LoggingService,
+    private readonly store?: ElectronStoreService
   ) {
   }
 
@@ -70,7 +73,9 @@ export class UtilitiesService {
       return '';
     }
 
-    return this.formatRawDate(date, 'DD-MMM-YYYY HH:mm:ss') || '';
+    // Parsed as before, then written in the format chosen in Settings.
+    const stored = this.formatRawDate(date, 'YYYY-MM-DD HH:mm:ss');
+    return stored ? formatDisplayDateTime(stored, this.store?.get?.('commonConfig')?.dateFormat) : '';
   }
 
   hex2ascii(hexx) {

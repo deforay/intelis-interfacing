@@ -406,7 +406,7 @@
         <ng-container matColumnDef="analysed_date_time">
           <mat-header-cell *matHeaderCellDef mat-sort-header>Tested On</mat-header-cell>
           <mat-cell *matCellDef="let row">
-            <span class="date-time" [title]="row.analysed_date_time">{{ row.analysed_date_time }}</span>
+            <span class="date-time" [title]="row.analysed_date_time">{{ row.analysed_date_time | displayDateTime }}</span>
           </mat-cell>
         </ng-container>
 
@@ -414,7 +414,7 @@
         <ng-container matColumnDef="added_on">
           <mat-header-cell *matHeaderCellDef mat-sort-header>Received On</mat-header-cell>
           <mat-cell *matCellDef="let row">
-            <span class="date-time" [title]="row.added_on">{{ row.added_on }}</span>
+            <span class="date-time" [title]="row.added_on">{{ row.added_on | displayDateTime }}</span>
           </mat-cell>
         </ng-container>
 
@@ -442,7 +442,7 @@
         <ng-container matColumnDef="lims_sync_date_time">
           <mat-header-cell *matHeaderCellDef mat-sort-header>Sync Time</mat-header-cell>
           <mat-cell *matCellDef="let row">
-            <span class="date-time" [title]="row.lims_sync_date_time || ''">{{ row.lims_sync_date_time || '-' }}</span>
+            <span class="date-time" [title]="row.lims_sync_date_time || ''">{{ (row.lims_sync_date_time | displayDateTime) || '-' }}</span>
           </mat-cell>
         </ng-container>
 

@@ -121,7 +121,7 @@
           <i class="fas fa-clock"></i>&nbsp;Added On
         </mat-header-cell>
         <mat-cell *matCellDef="let row">
-          <span class="date-time">{{ row.added_on }}</span>
+          <span class="date-time" [title]="row.added_on">{{ row.added_on | displayDateTime }}</span>
         </mat-cell>
       </ng-container>
 

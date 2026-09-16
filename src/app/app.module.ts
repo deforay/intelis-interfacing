@@ -1,3 +1,4 @@
+import { DisplayDateTimePipe } from './pipes/display-date-time.pipe';
 import { BrowserModule } from '@angular/platform-browser';
 import { ErrorHandler, NgModule } from '@angular/core';
 import { FormsModule, ReactiveFormsModule } from '@angular/forms';
@@ -47,7 +48,8 @@ import { MatInputModule } from '@angular/material/input';
     SettingsComponent,
     ConsoleComponent,
     RawDataComponent,
-    DashboardComponent
+    DashboardComponent,
+    DisplayDateTimePipe
   ],
   imports: [
     BrowserModule,

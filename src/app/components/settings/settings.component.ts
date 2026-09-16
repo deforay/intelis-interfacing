@@ -15,6 +15,7 @@ import { IntelisConnectionService } from '../../services/intelis-connection.serv
 import { ResultWebhookService } from '../../services/result-webhook.service';
 import { normalizeResultRules, ResultRule } from '../../../../shared/result-rules';
 import { instrumentForSave, savedInstrumentFormGroup } from './instrument-form';
+import { DATE_DISPLAY_FORMATS, dateDisplayFormatLabel, DEFAULT_DATE_DISPLAY_FORMAT } from '../../../../shared/date-display';
 import { ResultWebhookSyncService } from '../../services/result-webhook-sync.service';
 import {
   isPlainHttpToAnotherHost,
@@ -180,7 +181,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
         mysqlDb: [''],
         mysqlUser: [''],
         mysqlPassword: [''],
-        interfaceAutoConnect: ['yes', Validators.required]
+        interfaceAutoConnect: ['yes', Validators.required],
+        dateFormat: [DEFAULT_DATE_DISPLAY_FORMAT]
       }),
       lisApiSettings: this.formBuilder.group({
         url: [''],
@@ -592,6 +594,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
   get instrumentsSettings(): FormArray {
     return this.settingsForm.get('instrumentsSettings') as FormArray;
   }
+
+  /** Each date format, labelled with today's date written that way. */
+  public readonly dateFormatOptions = DATE_DISPLAY_FORMATS.map(format => ({ value: format, label: dateDisplayFormatLabel(format) }));
 
   trackByIndex(index: number): number {
     return index;

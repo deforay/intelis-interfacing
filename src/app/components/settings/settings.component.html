@@ -112,6 +112,16 @@
               </div>
 
               <div class="form-group">
+                <label for="settingsDateFormat">Date Format</label>
+                <div class="custom-select-wrapper">
+                  <select id="settingsDateFormat" formControlName="dateFormat" class="form-control">
+                    <option *ngFor="let option of dateFormatOptions" [value]="option.value">{{ option.label }}</option>
+                  </select>
+                </div>
+                <small class="help-text">How dates are shown on screen. Stored results and what the LIS receives are not changed.</small>
+              </div>
+
+              <div class="form-group">
                 <label for="settingsSqlitePath">SQLite Database Path</label>
                 <div class="input-group">
                   <input id="settingsSqlitePath" type="text" class="form-control readonly" [value]="appPath" readonly>

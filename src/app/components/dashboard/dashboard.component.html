@@ -105,7 +105,7 @@
         </div>
         <div class="activity-content">
           <h4>Last Results Synced to LIS</h4>
-          <p class="activity-time">{{ latestResult?.lims_sync_date_time || 'No sync data' }}</p>
+          <p class="activity-time">{{ (latestResult?.lims_sync_date_time | displayDateTime) || 'No sync data' }}</p>
           <span class="activity-label" *ngIf="selectedInstrument">{{ selectedInstrument }}</span>
         </div>
       </div>
@@ -116,7 +116,7 @@
         </div>
         <div class="activity-content">
           <h4>Last Result Received from Instrument</h4>
-          <p class="activity-time">{{ latestResult?.added_on || 'No results yet' }}</p>
+          <p class="activity-time">{{ (latestResult?.added_on | displayDateTime) || 'No results yet' }}</p>
           <span class="activity-label" *ngIf="selectedInstrument">{{ selectedInstrument }}</span>
         </div>
       </div>
