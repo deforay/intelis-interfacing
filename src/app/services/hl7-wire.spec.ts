@@ -5,7 +5,7 @@ import {
   ALINITY_M_QUANTIFIED, GENERIC_BATCH, GENERIC_ENCODED_VALUE, GENERIC_ERROR, GENERIC_HIV_VL,
   GENERIC_INCOMPLETE, GENERIC_TESTER_ON_OBR, MISSING_OBX, MISSING_SPM, ROCHE_5800_NOT_DETECTED_FLAG,
   ROCHE_5800_QUANTIFIED, ROCHE_6800_ABOVE_RANGE, ROCHE_6800_BELOW_RANGE, ROCHE_6800_INSTRUMENT_ERROR,
-  ROCHE_6800_QUANTIFIED, ROCHE_6800_TARGET_NOT_DETECTED_FLAG, ROCHE_6800_TITER, RUN_DATE_FORMATTED, msh
+  ROCHE_6800_QUANTIFIED, ROCHE_6800_TARGET_NOT_DETECTED_FLAG, ROCHE_6800_TITER, RUN_DATE_FORMATTED, msh, obx as obxSegment
 } from '../testing/fixtures/hl7.fixtures';
 
 describe('HL7 over the wire', () => {
@@ -382,6 +382,138 @@ describe('HL7 over the wire', () => {
       expect(wire.saved()).toHaveLength(1);
       expect(wire.saved()[0].order_id).toBe('SAMPLE-GX-ENC');
       expect(wire.raw()[0]).not.toContain('MSG-GX-001');
+    });
+  });
+
+  describe('keeps each specimen of a batch message to its own segments', () => {
+    const specimen = (index: number, id: string, sacId: string, testCode: string, value: string) => [
+      `SPM|${index}|${id}&ROCHE`,
+      `SAC|||${sacId}`,
+      `OBR|${index}|||${testCode}^${testCode}^99ROC`,
+      obxSegment(index, { 2: 'ST', 3: `${testCode}^${testCode}^99ROC`, 4: '1.1', 5: value, 11: 'F', 16: 'TECH-1', 19: '20260714113000' })
+    ];
+    const batch = (groups: string[][]) => [msh('cobas 4800', 'MSG-BATCH'), ...groups.flat()].join(CR);
+    const parsers = ['generic', 'roche-cobas-4800', 'roche-cobas-5800', 'roche-cobas-6800', 'abbott-alinity-m'];
+
+    for (const machineType of parsers) {
+      it(`never gives a specimen without an ID another specimen's ID (${machineType})`, () => {
+        const wire = harness(machineType);
+
+        wire.receive(mllp(batch([
+          specimen(1, 'S-001', 'S-001', '0BHIV1', 'Target Not Detected'),
+          specimen(2, '', '', '0BHIV1', 'Failed')
+        ])));
+
+        expect(wire.saved().filter(result => result.results === 'Failed').map(result => result.order_id)).toEqual(['']);
+      });
+
+      it(`never gives a specimen another specimen's result (${machineType})`, () => {
+        const wire = harness(machineType);
+        const withoutResult = specimen(2, 'S-002', 'S-002', '0BHIV1', '').slice(0, 3);
+
+        wire.receive(mllp(batch([
+          specimen(1, 'S-001', 'S-001', '0BHIV1', '4.12E+03 cp/mL'),
+          withoutResult,
+          specimen(3, 'S-003', 'S-003', '0BHIV1', 'Target Not Detected')
+        ])));
+
+        const stored = wire.saved().map(result => [result.order_id, result.results]);
+        expect(stored).not.toContainEqual(['S-002', '4.12E+03 cp/mL']);
+        expect(stored).not.toContainEqual(['S-002', 'Target Not Detected']);
+        expect(stored).toContainEqual(['S-003', 'Target Not Detected']);
+        expect(wire.failures()).toContain('result_parsing_failed');
+      });
+
+      it(`reads each specimen's test type from its own order (${machineType})`, () => {
+        const wire = harness(machineType);
+
+        wire.receive(mllp(batch([
+          specimen(1, 'S-001', 'S-001', '0BHIV1', 'Target Not Detected'),
+          specimen(2, 'S-002', 'S-002', '0BHIV1QUAL', 'Detected')
+        ])));
+
+        expect(wire.saved().map(result => [result.order_id, result.test_type])).toEqual([
+          ['S-001', '0BHIV1'],
+          ['S-002', '0BHIV1QUAL']
+        ]);
+      });
+    }
+
+    it('reads specimens listed before all of their results as a whole, as before', () => {
+      const wire = harness();
+
+      wire.receive(mllp([
+        msh('Other', 'MSG-SPM-FIRST'),
+        'SPM|1|S-001',
+        'SPM|2|S-002',
+        'OBR|1|||HIVVL^HIV-1 Viral Load',
+        obxSegment(1, { 2: 'ST', 3: 'HIVVL^HIV-1 Viral Load', 4: '1', 5: '111', 11: 'F', 19: '20260714113000' }),
+        obxSegment(2, { 2: 'ST', 3: 'HIVVL^HIV-1 Viral Load', 4: '2', 5: '222', 11: 'F', 19: '20260714113000' })
+      ].join(CR)));
+
+      expect(wire.saved().map(result => [result.order_id, result.results])).toEqual([['S-001', '111'], ['S-002', '222']]);
+      expect(wire.failures()).toEqual([]);
+    });
+
+    for (const machineType of ['generic', 'roche-cobas-4800', 'roche-cobas-5800']) {
+      it(`stores each specimen's own result when its group also carries a Ct value (${machineType})`, () => {
+        const wire = harness(machineType);
+        const withCt = (index: number, id: string, value: string, ct: string) => [
+          `SPM|${index}|${id}`,
+          `OBR|${index}|||0BHIV1^0BHIV1^99ROC`,
+          obxSegment(1, { 2: 'DR', 3: 'RunTimeRange^Run Execution Time Range^99ROC', 4: '1', 5: '20260714100000^20260714113000', 11: 'F' }),
+          obxSegment(2, { 2: 'ST', 3: '0BHIV1^0BHIV1^99ROC', 4: '1.1', 5: value, 11: 'F', 19: '20260714113000' }),
+          obxSegment(3, { 2: 'ST', 3: '0BHIV1^0BHIV1^99ROC', 4: '1.2', 5: ct, 11: 'F', 19: '20260714113000' })
+        ];
+
+        wire.receive(mllp([
+          msh('cobas', 'MSG-CT'),
+          ...withCt(1, 'S-001', '111 cp/mL', '31.20'),
+          ...withCt(2, 'S-002', '222 cp/mL', '29.80'),
+          ...withCt(3, 'S-003', 'Target Not Detected', '0.00')
+        ].join(CR)));
+
+        expect(wire.saved().map(result => [result.order_id, result.results])).toEqual([
+          ['S-001', '111 cp/mL'],
+          ['S-002', '222 cp/mL'],
+          ['S-003', 'Target Not Detected']
+        ]);
+      });
+    }
+
+    it('reads a specimen\'s test type from its own order rather than one before the specimens', () => {
+      const wire = harness();
+
+      wire.receive(mllp([
+        msh('Other', 'MSG-HEADER-OBR'),
+        'OBR|1|||HDR^HEADER',
+        'SPM|1|S-001',
+        'OBR|2|||A^ASSAY-A',
+        obxSegment(1, { 2: 'ST', 3: 'A^ASSAY-A', 4: '1', 5: '111', 11: 'F', 19: '20260714113000' }),
+        'SPM|2|S-002',
+        'OBR|3|||B^ASSAY-B',
+        obxSegment(2, { 2: 'ST', 3: 'B^ASSAY-B', 4: '2', 5: '222', 11: 'F', 19: '20260714113000' })
+      ].join(CR)));
+
+      expect(wire.saved().map(result => [result.order_id, result.test_type])).toEqual([['S-001', 'ASSAY-A'], ['S-002', 'ASSAY-B']]);
+    });
+
+    it('reads a message whose results come before its specimens as a whole, as before', () => {
+      const wire = harness();
+
+      wire.receive(mllp([
+        msh('Other', 'MSG-ORU'),
+        'OBR|1|||HIVVL^HIV-1 Viral Load',
+        obxSegment(1, { 2: 'ST', 3: 'HIVVL^HIV-1 Viral Load', 4: '1', 5: '1250', 6: 'copies/mL', 11: 'F', 19: '20260714113000' }),
+        obxSegment(2, { 2: 'ST', 3: 'HIVVL^HIV-1 Viral Load', 4: '2', 5: '820', 6: 'copies/mL', 11: 'F', 19: '20260714113000' }),
+        'SPM|1|SAMPLE-ORU-001',
+        'SPM|2|SAMPLE-ORU-002'
+      ].join(CR)));
+
+      expect(wire.saved().map(result => [result.order_id, result.results])).toEqual([
+        ['SAMPLE-ORU-001', '1250'],
+        ['SAMPLE-ORU-002', '820']
+      ]);
     });
   });
 

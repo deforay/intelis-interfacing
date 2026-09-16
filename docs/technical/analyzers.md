@@ -102,9 +102,22 @@ All three send OUL^R22 over MLLP and disagree about where things are.
 - **5800**: a quantitative result is `NM` with a three-digit mantissa in `OBX.5`
   and a UCUM power of ten in `OBX.6` — 367 with `10*-1.{copies}/mL`. Both are
   stored as sent; multiplying them out is the LIS's job, not this tool's.
-- **4800**: each specimen group carries two `OBX`. The first is a run-time
-  range; the **second** is the result, as text: `3.26E+05 cp/mL` with unit
-  `1/mL^^UCUM`, or `Target Not Detected`, `< Titer min`, `Invalid`.
+- **4800**: one message per run, every sample in it. Each specimen group
+  carries two `OBX`. The first is a run-time range; the **second** is the
+  result, as text: `3.26E+05 cp/mL` with unit `1/mL^^UCUM`, or
+  `Target Not Detected`, `< Titer min`, `> Titer max`, `Invalid`, `Failed`.
+  The qualitative assay `0BHIV1QUAL` reports `Not Detected`, `Detected`, and
+  `Valid` on its control.
+- **4800 result status**: `OBX.11` is `F`, `X` for a failed run, or `P`. `P`
+  is how at least one laboratory reports: nearly every sample it sent as `P` was
+  never sent again as `F`. HL7 results are therefore all stored as final.
+- **4800 flags**: `NTE` 1 carries the run flags (`F;X2,X3`, `F;R3223,X2`). They
+  are what explains a `Failed` or `Invalid` result, and they are not kept in
+  the notes today.
+- **4800 `> Titer max`** is stored as `> 10000000`. Older versions of this tool
+  wrote `>10000000`. Both are a number the analyzer did not send.
+- A 4800 control can fail before it is identified: `SPM.2` is `&ROCHE` and
+  `SAC.3` is empty. Its sample ID is stored empty.
 - Instrument errors and flags arrive as text and are stored as `Failed` with the
   detail kept in the notes.
 

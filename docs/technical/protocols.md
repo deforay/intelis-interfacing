@@ -47,7 +47,11 @@ Both are in the field, because both are settings on the analyzers.
 
 - **With checksums**, each frame is verified and a frame that fails is `NAK`ed
   so the analyzer sends it again.
-- **Without**, there is nothing to verify; every chunk is accepted as it comes.
+- **Without**, there is nothing to verify, but a read is still taken apart
+  first: every frame, and every `<ENQ>`, `<EOT>` and `<NAK>`, is handled as if
+  it had arrived on its own. A whole session delivered in one read is then
+  completed at its `<EOT>`, each message keeps its own raw text, and `<ENQ>` is
+  acknowledged without becoming part of the stored transmission.
 
 The tool has to be told which, because a frame's trailing two characters are
 either a checksum to strip or two characters of data.
@@ -89,6 +93,33 @@ one byte short of it. When no `<CR>` follows, or the connection goes away first,
 the block is taken as it stands — an analyzer that never sends a terminator has
 still finished sending a result, and waiting for a byte it will not send would
 lose it.
+
+### A batch message is read one specimen at a time
+
+Most analyzers send one message per sample. The cobas 4800 sends one message
+for a whole run, every sample an `SPM` followed by its own `SAC`, `OBR` and
+`OBX` segments. Looked up across the whole message, a sample's fallback ID
+(`SAC.3`), test type (`OBR.4`) and result `OBX` can belong to another sample:
+a sample with no ID would take the first sample's, and a sample whose result is
+missing would take someone else's.
+
+So a message with more than one `SPM` is split, and each sample is read only
+from its own group: its `SPM` and every segment after it up to the next `SPM`,
+behind the message header. Within a group:
+
+- the sample ID falls back to the group's own `SAC.3`;
+- the test type comes from the group's own `OBR`, not one that precedes the
+  first `SPM`, when the group has one;
+- the result is the group's first result `OBX`. A run-time range is never taken
+  as a result.
+
+A sample whose group has no result is recorded as a parse failure and stored
+nowhere. A message with one `SPM` is read as a whole, exactly as before.
+
+The split assumes each specimen is followed by its own results, as `OUL^R22`
+has it and as every analyzer captured so far sends. Two layouts do not do that
+and are read as a whole, as they always were: results before the first `SPM`,
+and every `SPM` listed before all of the results.
 
 ## What both have in common
 

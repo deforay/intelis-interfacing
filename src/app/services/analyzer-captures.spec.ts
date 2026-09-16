@@ -20,7 +20,7 @@ import {
   COBAS_6800_CAPTURE, COBAS_6800_RESULT_TIME_FORMATTED, cobas6800Query
 } from '../testing/fixtures/captured/roche-cobas-6800';
 import {
-  COBAS_4800_RESULT_TIME_FORMATTED, COBAS_4800_RUN, cobas4800Query, cobas4800Run
+  COBAS_4800_RESULT_TIME_FORMATTED, COBAS_4800_RUN, COBAS_4800_THIRD_LAB_RUN, cobas4800Query, cobas4800Run
 } from '../testing/fixtures/captured/roche-cobas-4800';
 import {
   TAQMAN_COMPLETED_TIME_FORMATTED, TAQMAN_LAB, TAQMAN_SAMPLES, taqmanFrames, taqmanMessage, taqmanSession
@@ -309,6 +309,30 @@ describe('Roche cobas 4800 capture (HL7)', () => {
       expect(wire.saved().map(result => result.results)).not.toContain('20260612163740^20260612194324');
     });
   }
+
+  it('stores the outcomes a third laboratory sends, as they are stored today', () => {
+    const wire = createWireHarness({ protocol: 'hl7', machineType: 'roche-cobas-4800' });
+
+    wire.receive(mllp(cobas4800Run('MSG-4800-LAB3', COBAS_4800_THIRD_LAB_RUN)));
+
+    expect(wire.saved().map(result => [result.order_id, result.test_type, result.results, result.test_unit, result.result_status, result.notes])).toEqual([
+      // P is stored as final: this laboratory never sends most results as F.
+      ['VL230101', '0BHIV1', '4.12E+03 cp/mL', '1/mL', 1, ''],
+      ['VL230102', '0BHIV1', 'Target Not Detected', '', 1, ''],
+      // Open: the NTE flag codes that explain a failure are not kept in notes.
+      ['VL230103', '0BHIV1', 'Failed', '', 1, ''],
+      ['VL230104', '0BHIV1', 'Failed', '', 1, ''],
+      ['VL230105', '0BHIV1', 'Invalid', '', 1, ''],
+      // Open: rewritten from "> Titer max", a value the analyzer did not send.
+      ['VL230106', '0BHIV1', '> 10000000', '', 1, ''],
+      ['EID230107', '0BHIV1QUAL', 'Not Detected', '', 1, ''],
+      ['EID230108', '0BHIV1QUAL', 'Detected', '', 1, ''],
+      ['0PLJ230109N0AUQ', '0BHIV1QUAL', 'Valid', '', 1, ''],
+      // A control that failed before it was identified keeps no sample ID.
+      ['', '0BHIV1', 'Failed', '', 1, '']
+    ]);
+    expect(wire.failures()).toEqual([]);
+  });
 
   it('acknowledges a work-order query without storing anything', () => {
     const wire = createWireHarness({ protocol: 'hl7', machineType: 'roche-cobas-4800' });

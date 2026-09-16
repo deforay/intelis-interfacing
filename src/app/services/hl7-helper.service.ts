@@ -123,8 +123,12 @@ export class HL7HelperService {
  * @returns The most appropriate OBX segment or null if none found
  */
   findAppropriateHL7OBXSegment(obxArray: any[], sampleNumber: number): any {
-    // First try to find an OBX segment that matches this sample number in OBX.4
+    // First try to find an OBX segment that matches this sample number in OBX.4.
+    // A run-time range is never a result, whatever its OBX.4 says.
     for (const currentObx of obxArray) {
+      if ((currentObx.get('OBX.2')?.toString() ?? '') === 'DR' && (currentObx.get('OBX.3.1')?.toString() ?? '') === 'RunTimeRange') {
+        continue;
+      }
       const obx4Value = currentObx.get('OBX.4')?.toString() ?? '';
       if (obx4Value && (obx4Value === sampleNumber.toString() || obx4Value === `${sampleNumber}/2`)) {
         return currentObx;
@@ -322,7 +326,9 @@ export class HL7HelperService {
    * @returns Object with order_id and test_id
    */
   extractHL7OrderAndTestIDs(spm: any, message: any, fieldPosition: number = 2): { order_id: string, test_id: string } {
-    const idValue = spm.get(`SPM.${fieldPosition}`)?.toString().replace('&ROCHE', '') ?? '';
+    // A specimen segment can end before the field; that is an empty ID, not a
+    // reason to lose every specimen in the message.
+    const idValue = (spm.get(`SPM.${fieldPosition}`)?.toString() ?? '').replace('&ROCHE', '');
 
     if (idValue) {
       return { order_id: idValue, test_id: idValue };
@@ -423,6 +429,68 @@ export class HL7HelperService {
    */
   createHL7Message(rawHl7Text: string): Message {
     return this.hl7parser.create(rawHl7Text.trim());
+  }
+
+  /**
+   * Every specimen in one HL7 message, each with the segments that belong to
+   * it: its SPM, and the OBX segments and message to read its ID, test type
+   * and result from.
+   *
+   * A message with one specimen is returned as it is, so the analyzers that
+   * send a message per sample are read exactly as before. A message with
+   * several is split into one group per SPM (the SPM and every segment after
+   * it up to the next SPM, behind the message header), so no specimen can be
+   * given another's sample ID, test type or result: the first SAC, the first
+   * OBR and the last result OBX of the message belong to one specimen only.
+   *
+   * The split relies on the OUL^R22 order, specimen before its results, which
+   * is what every analyzer captured so far sends. A message whose results come
+   * before its first specimen cannot be split that way and is read as a
+   * whole, as it always was.
+   */
+  hl7Specimens(rawHl7Text: string, message: Message): { spm: any; obx: any[]; message: Message; grouped: boolean }[] {
+    const specimens = message.get('SPM').toArray();
+    const wholeMessage = () => specimens.map(spm => ({ spm, obx: message.get('OBX').toArray(), message, grouped: false }));
+    if (specimens.length <= 1) {
+      return wholeMessage();
+    }
+
+    const segments = rawHl7Text.split('\r').filter(segment => segment !== '');
+    const firstSpecimen = segments.findIndex(segment => segment.startsWith('SPM|'));
+    const firstResult = segments.findIndex(segment => segment.startsWith('OBX|'));
+    if (firstSpecimen === -1 || (firstResult !== -1 && firstResult < firstSpecimen)) {
+      return wholeMessage();
+    }
+
+    const header = segments.slice(0, firstSpecimen);
+    const groups: string[][] = [];
+    for (const segment of segments.slice(firstSpecimen)) {
+      if (segment.startsWith('SPM|')) {
+        groups.push([]);
+      }
+      groups[groups.length - 1].push(segment);
+    }
+
+    // Specimens listed one after another with every result behind the last
+    // of them do not own the segments that follow them: read as a whole.
+    const hasResults = (group: string[]) => group.some(segment => segment.startsWith('OBX|'));
+    if (groups.slice(0, -1).every(group => !hasResults(group))) {
+      return wholeMessage();
+    }
+
+    return groups.map(group => {
+      // A header OBR describes no specimen in particular; a specimen's own
+      // OBR, when it has one, is the one its test type is read from.
+      const ownOrder = group.some(segment => segment.startsWith('OBR|'));
+      const specimenHeader = ownOrder ? header.filter(segment => !segment.startsWith('OBR|')) : header;
+      const specimenMessage = this.createHL7Message([...specimenHeader, ...group].join('\r'));
+      return {
+        spm: specimenMessage.get('SPM').toArray()[0],
+        obx: specimenMessage.get('OBX').toArray(),
+        message: specimenMessage,
+        grouped: true
+      };
+    });
   }
 
   /**

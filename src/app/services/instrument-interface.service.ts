@@ -143,10 +143,7 @@ export class InstrumentInterfaceService {
         return;
       }
 
-      const obx = message.get('OBX').toArray();
-      const spm = message.get('SPM');
-
-      spm.forEach(function (singleSpm) {
+      that.hl7Helper.hl7Specimens(rawText, message).forEach(function ({ spm: singleSpm, obx, message }) {
         // For Alinity, we typically use the first OBX for each SPM
         let singleObx = obx[0];
 
@@ -158,6 +155,7 @@ export class InstrumentInterfaceService {
         // Safety check
         if (!singleObx) {
           that.utilitiesService.logger('error', 'No valid OBX segment found for sample in Alinity data', instrumentConnectionData.instrumentId);
+          that.recordProcessingFailure('result_parsing_failed', instrumentConnectionData);
           return;
         }
 
@@ -224,21 +222,21 @@ export class InstrumentInterfaceService {
         return;
       }
 
-      const obx = message.get('OBX').toArray();
-      const spm = message.get('SPM');
-
-      spm.forEach(function (singleSpm) {
+      that.hl7Helper.hl7Specimens(rawText, message).forEach(function ({ spm: singleSpm, obx, message, grouped }) {
         // Get sample number and find appropriate OBX segment
         let sampleNumber = singleSpm.get(1).toInteger();
         if (Number.isNaN(sampleNumber)) {
           sampleNumber = 1;
         }
 
-        let singleObx = that.hl7Helper.findAppropriateHL7OBXSegment(obx, sampleNumber);
+        // In a specimen's own group its first result is its result; the
+        // sample number only indexes results across a whole message.
+        let singleObx = that.hl7Helper.findAppropriateHL7OBXSegment(obx, grouped ? 1 : sampleNumber);
 
         // Safety check
         if (!singleObx) {
           that.utilitiesService.logger('error', 'No valid OBX segment found for sample ' + sampleNumber, instrumentConnectionData.instrumentId);
+          that.recordProcessingFailure('result_parsing_failed', instrumentConnectionData);
           return;
         }
 
@@ -305,21 +303,21 @@ export class InstrumentInterfaceService {
         return;
       }
 
-      const obx = message.get('OBX').toArray();
-      const spm = message.get('SPM');
-
-      spm.forEach(function (singleSpm) {
+      that.hl7Helper.hl7Specimens(rawText, message).forEach(function ({ spm: singleSpm, obx, message, grouped }) {
         // Get sample number and find appropriate OBX segment
         let sampleNumber = singleSpm.get(1).toInteger();
         if (Number.isNaN(sampleNumber)) {
           sampleNumber = 1;
         }
 
-        let singleObx = that.hl7Helper.findAppropriateHL7OBXSegment(obx, sampleNumber);
+        // In a specimen's own group its first result is its result; the
+        // sample number only indexes results across a whole message.
+        let singleObx = that.hl7Helper.findAppropriateHL7OBXSegment(obx, grouped ? 1 : sampleNumber);
 
         // Safety check
         if (!singleObx) {
           that.utilitiesService.logger('error', 'No valid OBX segment found for sample ' + sampleNumber, instrumentConnectionData.instrumentId);
+          that.recordProcessingFailure('result_parsing_failed', instrumentConnectionData);
           return;
         }
 
@@ -386,10 +384,7 @@ export class InstrumentInterfaceService {
         return;
       }
 
-      const obxArray = message.get('OBX').toArray();
-      const spm = message.get('SPM');
-
-      spm.forEach(function (singleSpm: any) {
+      that.hl7Helper.hl7Specimens(rawText, message).forEach(function ({ spm: singleSpm, obx: obxArray, message }) {
         // For 6800/8800, look for OBX with OBX.4 = "1/2"
         let resultOutcome = '';
         let singleObx = null;
@@ -415,6 +410,7 @@ export class InstrumentInterfaceService {
         // Safety check
         if (!singleObx) {
           that.utilitiesService.logger('error', 'No valid OBX segment found for Roche 6800/8800', instrumentConnectionData.instrumentId);
+          that.recordProcessingFailure('result_parsing_failed', instrumentConnectionData);
           return;
         }
 
