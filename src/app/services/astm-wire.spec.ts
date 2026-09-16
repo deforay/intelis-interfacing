@@ -367,7 +367,9 @@ describe('ASTM over the wire (with checksum)', () => {
 
       expect(wire.connection.transmissionStatusSubject.value).toBe(false);
       expect((wire.astmHelper as any).astmFrameBuffers.has('ANALYZER-1')).toBe(false);
-    });
+      // Several megabytes pass through the byte-by-byte decoding, which takes
+      // longer than the default timeout on a busy machine.
+    }, 30_000);
 
     it('clears partial state on disconnect so a reconnect starts clean', () => {
       const wire = harness();

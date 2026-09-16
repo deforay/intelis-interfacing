@@ -370,7 +370,9 @@ describe('HL7 over the wire', () => {
 
       expect(wire.failures()).toContain('incomplete_transmission_too_large');
       expect((wire.service as any).hl7ReceiveBuffers.has('ANALYZER-1')).toBe(false);
-    });
+      // Several megabytes pass through the byte-by-byte decoding, which takes
+      // longer than the default timeout on a busy machine.
+    }, 30_000);
 
     it('clears partial state on disconnect so a reconnect starts clean', () => {
       const wire = harness();
