@@ -112,7 +112,7 @@ jobs:
         run: npm run build:prod
 
       - name: Build Linux package
-        run: npx electron-builder --linux deb --x64 --publish never
+        run: npx --no-install electron-builder --linux deb --x64 --publish never
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -126,7 +126,7 @@ jobs:
       # branch produces run artifacts but must never touch a public release.
       - name: Publish Linux assets to ${{ needs.version-check.outputs.release_tag }}
         if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2 — pinned: this step holds contents: write
         with:
           tag_name: ${{ needs.version-check.outputs.release_tag }}
           name: ${{ needs.version-check.outputs.release_tag }}
@@ -181,7 +181,7 @@ jobs:
         run: npm run build:prod
 
       - name: Build Windows package
-        run: npx electron-builder --win portable nsis --x64 --publish never
+        run: npx --no-install electron-builder --win portable nsis --x64 --publish never
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -196,7 +196,7 @@ jobs:
       # finishes first it creates it. Either order works.
       - name: Publish Windows assets to ${{ needs.version-check.outputs.release_tag }}
         if: github.ref_type == 'tag'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2 — pinned: this step holds contents: write
         with:
           tag_name: ${{ needs.version-check.outputs.release_tag }}
           name: ${{ needs.version-check.outputs.release_tag }}

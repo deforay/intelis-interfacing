@@ -195,7 +195,7 @@ find_release_asset_url() {
     api_url="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest"
   fi
 
-  release_json="$(curl -fsSL "${api_url}")"
+  release_json="$(curl --proto '=https' --proto-redir '=https' -fsSL "${api_url}")"
 
   if [[ -n "$arch_pattern" ]]; then
     asset_url="$(printf '%s\n' "${release_json}" \
@@ -268,7 +268,7 @@ install_latest() {
   package_path="${download_dir}/${package_name}"
 
   echo "Downloading ${asset_url}"
-  curl -fL "${asset_url}" -o "${package_path}"
+  curl --proto '=https' --proto-redir '=https' -fL "${asset_url}" -o "${package_path}"
 
   if install_package "${package_path}"; then
     return

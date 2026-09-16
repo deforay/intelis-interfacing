@@ -230,6 +230,9 @@ export function stopScheduledSettingsBackups(): void {
 }
 
 export function registerSettingsBackupIpc(deps: SettingsBackupDeps): void {
+  // The last file the operator picked in the import dialog. See import-settings.
+  let chosenImportPath: string | null = null;
+
   /**
    * Manual export. `includeCredentials` requires a passphrase: credentials are
    * only ever written to disk inside an encrypted envelope.
@@ -294,6 +297,7 @@ export function registerSettingsBackupIpc(deps: SettingsBackupDeps): void {
 
     try {
       const parsed = parseSettingsExport(JSON.parse(fs.readFileSync(filePaths[0], 'utf-8')));
+      chosenImportPath = filePaths[0];
       return {
         status: 'success',
         filePath: filePaths[0],
@@ -311,6 +315,14 @@ export function registerSettingsBackupIpc(deps: SettingsBackupDeps): void {
     try {
       let filePath = options?.filePath;
 
+      // The path comes back from the renderer only so a passphrase can be
+      // retried without picking the file again. It is accepted only if it is
+      // the file the operator chose in the dialog here, so this handler can
+      // never be pointed at an arbitrary path.
+      if (filePath && filePath !== chosenImportPath) {
+        return { status: 'error', message: 'Choose the settings file again with Import Settings.' };
+      }
+
       // No path means the caller has not been through inspect yet (or is older
       // code); ask for the file here so import still works on its own.
       if (!filePath) {
@@ -323,6 +335,7 @@ export function registerSettingsBackupIpc(deps: SettingsBackupDeps): void {
           return { status: 'cancelled', message: 'Import cancelled.' };
         }
         filePath = filePaths[0];
+        chosenImportPath = filePath;
       }
 
       const parsed = parseSettingsExport(JSON.parse(fs.readFileSync(filePath, 'utf-8')));
@@ -350,6 +363,7 @@ export function registerSettingsBackupIpc(deps: SettingsBackupDeps): void {
       Object.keys(importedSettings).forEach(key => {
         deps.store.set(key, importedSettings[key]);
       });
+      chosenImportPath = null;
 
       deps.getWindow()?.webContents.send('imported-settings', importedSettings);
 
