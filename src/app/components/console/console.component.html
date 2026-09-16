@@ -357,7 +357,7 @@
           <mat-header-cell *matHeaderCellDef mat-sort-header>
             Sample ID
           </mat-header-cell>
-          <mat-cell *matCellDef="let row">{{ row.order_id }}</mat-cell>
+          <mat-cell *matCellDef="let row"><span class="sample-id" [title]="row.order_id">{{ row.order_id }}</span></mat-cell>
         </ng-container>
 
         <!-- Test Result Column -->
@@ -402,7 +402,7 @@
         <ng-container matColumnDef="analysed_date_time">
           <mat-header-cell *matHeaderCellDef mat-sort-header>Tested On</mat-header-cell>
           <mat-cell *matCellDef="let row">
-            <span class="date-time">{{ row.analysed_date_time }}</span>
+            <span class="date-time" [title]="row.analysed_date_time">{{ row.analysed_date_time }}</span>
           </mat-cell>
         </ng-container>
 
@@ -410,7 +410,7 @@
         <ng-container matColumnDef="added_on">
           <mat-header-cell *matHeaderCellDef mat-sort-header>Received On</mat-header-cell>
           <mat-cell *matCellDef="let row">
-            <span class="date-time">{{ row.added_on }}</span>
+            <span class="date-time" [title]="row.added_on">{{ row.added_on }}</span>
           </mat-cell>
         </ng-container>
 
@@ -438,12 +438,12 @@
         <ng-container matColumnDef="lims_sync_date_time">
           <mat-header-cell *matHeaderCellDef mat-sort-header>Sync Time</mat-header-cell>
           <mat-cell *matCellDef="let row">
-            <span class="date-time">{{ row.lims_sync_date_time || '-' }}</span>
+            <span class="date-time" [title]="row.lims_sync_date_time || ''">{{ row.lims_sync_date_time || '-' }}</span>
           </mat-cell>
         </ng-container>
 
-        <mat-header-row *matHeaderRowDef="displayedColumns" class="table-header"></mat-header-row>
-        <mat-row *matRowDef="let row; columns: displayedColumns;" class="table-row"
+        <mat-header-row *matHeaderRowDef="visibleColumns" class="table-header"></mat-header-row>
+        <mat-row *matRowDef="let row; columns: visibleColumns;" class="table-row"
           [class.unsynced-row]="row.lims_sync_status == 0 || row.lims_sync_status === '0'">
         </mat-row>
       </mat-table>

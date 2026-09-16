@@ -122,6 +122,12 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
     'lims_sync_status',
     'lims_sync_date_time'
   ];
+  /**
+   * The columns actually shown: Notes only when a result on screen has one,
+   * so an empty column does not push the sync status off the screen.
+   */
+  public visibleColumns: string[] = this.displayedColumns.filter(column => column !== 'notes');
+  private visibleColumnsSubscription: Subscription | null = null;
   selectType = [
     { text: "Single", value: SelectType.single },
     { text: "Multiple", value: SelectType.multiple }
@@ -191,6 +197,13 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnInit() {
     const that = this;
+    that.visibleColumnsSubscription = that.dataSource.connect().subscribe(rows => {
+      const hasNotes = rows.some(row => typeof row?.notes === 'string' && row.notes.trim() !== '');
+      const columns = that.displayedColumns.filter(column => hasNotes || column !== 'notes');
+      if (columns.length !== that.visibleColumns.length) {
+        that.visibleColumns = columns;
+      }
+    });
     that.loadSettings();
     that.checkMysqlConnection();
 
@@ -957,6 +970,7 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnDestroy() {
     this.viewDestroyed = true;
+    this.visibleColumnsSubscription?.unsubscribe();
     this.updateSubscription?.unsubscribe();
     document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
     if (this.initialResultsTimeout) {

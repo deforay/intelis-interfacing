@@ -997,32 +997,35 @@ $background-color: #f9fafb;
     }
 
 
+    // Columns share the width instead of each holding a fixed one, so every
+    // column, the sync status included, fits a common laptop screen. The
+    // minimums keep dates and IDs readable; below them the table scrolls.
     .mat-column-machine_used {
       flex: 0 0 90px;
       max-width: 90px;
     }
 
     .mat-column-order_id {
-      flex: 0 0 180px;
-      max-width: 180px;
+      flex: 1 1 150px;
+      min-width: 110px;
     }
 
     .mat-column-results {
-      flex: 0 0 220px;
-      max-width: 220px;
+      flex: 2 1 180px;
+      min-width: 140px;
     }
 
     .mat-column-notes {
-      flex: 0 0 260px;
-      max-width: 260px;
+      flex: 2 1 180px;
+      min-width: 65px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
     .mat-column-test_unit {
-      flex: 0 0 80px;
-      max-width: 80px;
+      flex: 0 1 80px;
+      min-width: 50px;
       text-align: center;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -1030,28 +1033,32 @@ $background-color: #f9fafb;
     }
 
     .mat-column-test_type {
-      flex: 0 0 120px;
-      max-width: 120px;
+      flex: 1 1 110px;
+      min-width: 90px;
     }
 
     .mat-column-tested_by {
-      flex: 0 0 130px;
-      max-width: 130px;
+      flex: 1 1 110px;
+      min-width: 85px;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
+    // A date is never cut short: the full timestamp is what an operator
+    // matches against the analyzer's printout.
     .mat-column-analysed_date_time,
     .mat-column-added_on,
     .mat-column-lims_sync_date_time {
-      flex: 0 0 170px;
-      max-width: 170px;
+      flex: 0 0 150px;
+      min-width: 150px;
+      padding-left: 0.5rem;
+      padding-right: 0.5rem;
     }
 
     .mat-column-lims_sync_status {
-      flex: 0 0 90px;
-      max-width: 90px;
+      flex: 0 0 100px;
+      max-width: 100px;
       text-align: center;
     }
 
@@ -1069,15 +1076,21 @@ $background-color: #f9fafb;
       max-width: 100%;
     }
 
+    // A result is never cut short on screen: it wraps instead.
     .result-value {
       color: $dark-color;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
 
     .result-unit {
       font-size: 0.6rem;
+    }
+
+    // A sample ID is never cut short: a long barcode wraps instead.
+    .sample-id {
+      overflow-wrap: anywhere;
+      min-width: 0;
     }
 
     .date-time {
