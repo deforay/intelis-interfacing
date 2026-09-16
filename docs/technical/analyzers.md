@@ -5,6 +5,9 @@ reproduced as a fixture under `src/app/testing/fixtures/captured/` and replayed
 by `src/app/services/analyzer-captures.spec.ts`, so a change that alters what a
 real analyzer's message stores fails there first.
 
+Field numbers count the record type as field 1, the way the parser indexes
+them: in `O|1|S1|S1^RUN^A1`, `O.3` is `S1` and `O.4` is `S1^RUN^A1`.
+
 ## Cepheid GeneXpert — ASTM
 
 - The `H` record declares its delimiters as `@^\` rather than `\^&`.
@@ -44,19 +47,34 @@ does not tell you whether there is a number to read.
 
 ## Roche COBAS AmpliPrep/TaqMan 96 — ASTM
 
-Taken from AMPLILINK 3.3.5 logs, which hold the records but not the framing.
-TaqMan sends no checksums, so configure it as ASTM without checksum.
+Taken from AMPLILINK 3.3.5 and 3.3.7 logs, which hold the records but not the
+framing.
 
-- One message per sample: `H`, `P`, `O`, one `R`, several `C`, `L`.
-- `R.3` is the result as printed: `Target Not Detected`, or a mantissa with its
-  log value in brackets, `2.52E+3 (3.40)`. `R.4` is `cp/mL`, and empty when no
-  target was detected.
+- One message per sample: `H`, `P`, `O`, one `R`, several `C`, `L`. A session
+  can carry a whole batch.
+- `R.4` is the result as AMPLILINK wrote it, and the format depends on the
+  version. 3.3.5 prints `2.52E+3 (3.40)`, a mantissa with its log value, and
+  `R.5` is `cp/mL`. 3.3.7 sends the unrounded number, `1035.95864507225`, and
+  `R.5` is `cp/ml`. `Target Not Detected` has an empty unit in both.
+- Sample IDs are free text, double spaces included.
 - The `C` records carry `Accepted` and the instrument flags, such as
-  `TM40^ STEP_CORR-2`. They are stored in the notes.
-- `R.8` is `V` (verified), not `F`, so results are stored as not final. `O.4`
-  names the test `^^^ALL`, so the test type is stored as `ALL`. The assay code,
-  `HI2CAP96`, is only in `R.2`. Whether either should change is open until a
-  TaqMan laboratory confirms what its LIS expects.
+  `TM40^ STEP_CORR-2`. The notes keep the text of each, `STEP_CORR-2`, and drop
+  the flag code.
+- The order record stops at `O.12`, so it has no `O.26` report type, which is
+  where every ASTM analyzer's final status is read from. TaqMan results are
+  therefore stored as not final. TaqMan does mark each result `V` (verified)
+  in `R.9`, but nothing reads that field today.
+- `O.5` names the test `^^^ALL`, so the test type is stored as `ALL`. The assay
+  code, `HI2CAP96`, is only in `R.3`.
+- Both of those are open until a TaqMan laboratory confirms what its LIS
+  expects.
+- **Checksums are unconfirmed.** An AMPLILINK simulator trace shows standard
+  frames with checksums, and the laboratory setup is remembered as sending
+  none. Both are tested. Choose the ASTM protocol that matches what the
+  instrument actually sends.
+- **In every log, the LIS asked for results** with a `Q` record before
+  AMPLILINK sent them. This tool does not send queries, so AMPLILINK has to be
+  set to send results without being asked.
 
 ## Abbott Alinity m — HL7
 

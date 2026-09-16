@@ -17,6 +17,7 @@ import { ALINITY_BATCH, alinityMessage } from '../testing/fixtures/captured/abbo
 import { COBAS_5800_CAPTURE } from '../testing/fixtures/captured/roche-cobas-5800';
 import { COBAS_6800_CAPTURE } from '../testing/fixtures/captured/roche-cobas-6800';
 import { COBAS_4800_RUN, cobas4800Run } from '../testing/fixtures/captured/roche-cobas-4800';
+import { TAQMAN_SAMPLES, taqmanSession } from '../testing/fixtures/captured/roche-cobas-taqman';
 import {
   GENEXPERT_FR_TESTS, GENEXPERT_TESTS, genexpertFrMessage, genexpertFrames, genexpertMessage
 } from '../testing/fixtures/captured/cepheid-genexpert';
@@ -86,6 +87,12 @@ const CAPTURES: Capture[] = [
       send: astmSessions(GENEXPERT_FR_TESTS.map(genexpertFrMessage), genexpertFrames)
     }
   ]),
+  ...([['checksum', 'astm-checksum'], ['no-checksum', 'astm-nonchecksum']] as const).map(([framing, protocol]) => ({
+    name: `Roche COBAS TaqMan 96 (${protocol})`,
+    protocol,
+    machineType: 'roche-cobas-taqman',
+    send: (receive: (bytes: string) => void) => receive(taqmanSession(TAQMAN_SAMPLES, framing))
+  })),
   {
     name: 'Abbott Alinity m (HL7)',
     protocol: 'hl7',
@@ -155,5 +162,29 @@ describe('reprocessing a run that also carries a message without an order', () =
     expect(outcome).toEqual({ success: 1, failed: 0 });
     expect(failures).toEqual([]);
     expect(project(saved)).toEqual(project(live.saved()));
+  });
+});
+
+describe('reprocessing a transmission with an order that cannot be read', () => {
+  it('reports the entry as not reprocessed', async () => {
+    const live = createWireHarness({ protocol: 'astm-checksum', machineType: 'abbott-m2000' });
+    live.receive(m2000Session(M2000_RUN_SAMPLES.slice(0, 3)));
+
+    const wire = createWireHarness({ protocol: 'astm-checksum', machineType: 'abbott-m2000' });
+    const extract = wire.astmHelper.extractSampleResultFromASTM.bind(wire.astmHelper);
+    vi.spyOn(wire.astmHelper, 'extractSampleResultFromASTM').mockImplementation((dataArray: any, partData: string) =>
+      dataArray['O']?.[0]?.[2] === M2000_RUN_SAMPLES[1].specimenId ? null : extract(dataArray, partData)
+    );
+    const store = {
+      get: vi.fn((key: string) => key === 'instrumentsConfig'
+        ? [{ analyzerMachineName: wire.connection.instrumentId, analyzerMachineType: 'abbott-m2000', interfaceCommunicationProtocol: 'astm-checksum', labName: 'LAB001' }]
+        : {})
+    };
+    const processor = new RawDataProcessorService(wire.utilities, store as any, wire.service);
+
+    const outcome = await processor.reprocessRawData([{ id: 1, instrument_id: wire.connection.instrumentId, data: live.raw()[0] }]);
+
+    expect(outcome).toEqual({ success: 0, failed: 1 });
+    expect(wire.saved()).toHaveLength(2);
   });
 });

@@ -4,7 +4,7 @@
  * each capture showed. These tests are the contract with the field: a
  * change that alters what a real analyzer's message stores must fail here.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ACK, EOT, ENQ, NAK, createWireHarness, mllp } from '../testing/wire-harness';
 import {
   M2000_RESULT_TIME_FORMATTED, M2000_RUN_SAMPLES, m2000Frames, m2000Message, m2000Session
@@ -100,15 +100,51 @@ describe('Abbott m2000 capture (ASTM)', () => {
     expectRun(wire.saved());
   });
 
-  it('ignores the empty sessions and stray NUL byte the analyzer sends between runs', () => {
+  for (const protocol of ['astm-checksum', 'astm-nonchecksum'] as const) {
+    it(`ignores the empty sessions and stray NUL byte the analyzer sends between runs (${protocol})`, () => {
+      const wire = createWireHarness({ protocol, machineType: 'abbott-m2000' });
+
+      wire.receive(EOT + ENQ + EOT + ENQ + EOT);
+      wire.receive(ENQ);
+      wire.receive(EOT);
+      wire.receive('\x00' + m2000Session(M2000_RUN_SAMPLES));
+
+      expect(wire.failures()).toEqual([]);
+      expect(wire.raw()).toHaveLength(1);
+      expectRun(wire.saved());
+    });
+  }
+
+  it('stores a result whose order record ends before its test identifier', () => {
+    // An order record may stop after the specimen IDs. Reading the missing
+    // test identifier used to throw, and the sample's result was dropped
+    // without a failure being recorded.
+    const shortOrder = M2000_RUN_SAMPLES[1];
+    const messages = [m2000Message(M2000_RUN_SAMPLES[0]), m2000Message(shortOrder)];
+    messages[1] = messages[1].map(record => record.startsWith('O|') ? `O|1|${shortOrder.specimenId}|${shortOrder.specimenId}` : record);
     const wire = createWireHarness({ protocol: 'astm-checksum', machineType: 'abbott-m2000' });
 
-    wire.receive(EOT + ENQ + EOT + ENQ + EOT);
-    wire.receive('\x00' + m2000Session(M2000_RUN_SAMPLES));
+    wire.receive(ENQ + m2000Frames(messages).join('') + EOT);
 
-    expect(wire.failures()).not.toContain('no_results_extracted');
+    expect(wire.saved().map(result => [result.order_id, result.results])).toEqual([
+      [M2000_RUN_SAMPLES[0].specimenId, M2000_RUN_SAMPLES[0].result],
+      [shortOrder.specimenId, shortOrder.result]
+    ]);
+    expect(wire.failures()).toEqual([]);
+  });
+
+  it('records a failure for an order whose result cannot be read, and still stores the rest', () => {
+    const wire = createWireHarness({ protocol: 'astm-checksum', machineType: 'abbott-m2000' });
+    const extract = wire.astmHelper.extractSampleResultFromASTM.bind(wire.astmHelper);
+    vi.spyOn(wire.astmHelper, 'extractSampleResultFromASTM').mockImplementation((dataArray: any, partData: string) =>
+      dataArray['O']?.[0]?.[2] === M2000_RUN_SAMPLES[1].specimenId ? null : extract(dataArray, partData)
+    );
+
+    wire.receive(m2000Session(M2000_RUN_SAMPLES.slice(0, 3)));
+
+    expect(wire.saved().map(result => result.order_id)).toEqual([M2000_RUN_SAMPLES[0].specimenId, M2000_RUN_SAMPLES[2].specimenId]);
+    expect(wire.failures()).toEqual(['result_parsing_failed']);
     expect(wire.raw()).toHaveLength(1);
-    expectRun(wire.saved());
   });
 
   it('keeps frame numbers continuous across the messages of a session', () => {
@@ -400,13 +436,14 @@ describe('Cepheid GeneXpert 6.5 French capture (ASTM)', () => {
   });
 });
 
-describe('Roche COBAS TaqMan 96 capture (ASTM, no checksums)', () => {
+describe('Roche COBAS TaqMan 96 capture (ASTM)', () => {
   const expectResults = (results: any[]) => {
     expect(results.map(result => [result.order_id, result.results, result.test_unit, result.notes])).toEqual([
       ['TM-0001/26', 'Target Not Detected', '', 'Accepted | STEP_CORR-2 | RFITOOLOW-1'],
-      ['TM-0002/26', 'Target Not Detected', '', 'Accepted | STEP_CORR-2 | RFITOOLOW-1'],
-      ['TM-0003/26', 'Target Not Detected', '', 'Accepted | STEP_CORR-2 | RFITOOLOW-1'],
-      ['TM-0004/26', '2.52E+3 (3.40)', 'cp/mL', 'Accepted | STEP_CORR-2 | SPK_CORR-2']
+      ['TM-0002/26', '2.52E+3 (3.40)', 'cp/mL', 'Accepted | STEP_CORR-2 | SPK_CORR-2'],
+      ['QC 1', '1035.95864507225', 'cp/ml', 'Accepted | STEP_CORR-2'],
+      ['QC 2', '58.9827777398403', 'cp/ml', 'Accepted | STEP_CORR-2'],
+      ['QC  20', 'Target Not Detected', '', 'Accepted | STEP_CORR-2 | RFITOOLOW-1']
     ]);
     for (const result of results) {
       expect(result, result.order_id).toMatchObject({
@@ -423,29 +460,44 @@ describe('Roche COBAS TaqMan 96 capture (ASTM, no checksums)', () => {
     }
   };
 
-  it('stores every result when each session arrives in a single read', () => {
-    const wire = createWireHarness({ protocol: 'astm-nonchecksum', machineType: 'roche-cobas-taqman' });
+  // The logs do not show TaqMan's framing, so both are replayed, each in the
+  // protocol a laboratory would configure for it.
+  const configurations = [
+    { framing: 'checksum', protocol: 'astm-checksum' },
+    { framing: 'no-checksum', protocol: 'astm-nonchecksum' }
+  ] as const;
 
-    for (const sample of TAQMAN_SAMPLES) {
-      wire.receive(taqmanSession(sample));
-    }
+  for (const { framing, protocol } of configurations) {
+    it(`stores a batch delivered as one session in a single read (${protocol})`, () => {
+      const wire = createWireHarness({ protocol, machineType: 'roche-cobas-taqman' });
 
-    expectResults(wire.saved());
-    expect(wire.raw()).toHaveLength(TAQMAN_SAMPLES.length);
-    expect(wire.failures()).toEqual([]);
-  });
+      wire.receive(taqmanSession(TAQMAN_SAMPLES, framing));
 
-  it('stores the same results when every frame arrives in its own read', () => {
-    const wire = createWireHarness({ protocol: 'astm-nonchecksum', machineType: 'roche-cobas-taqman' });
+      expectResults(wire.saved());
+      expect(wire.raw()).toHaveLength(1);
+      expect(wire.failures()).toEqual([]);
+      expect(wire.sent()).not.toContain(NAK);
+    });
 
-    for (const sample of TAQMAN_SAMPLES) {
+    it(`stores the same batch when every frame arrives in its own read (${protocol})`, () => {
+      const wire = createWireHarness({ protocol, machineType: 'roche-cobas-taqman' });
+
       wire.receive(ENQ);
-      for (const frame of taqmanFrames(taqmanMessage(sample))) {
+      for (const frame of taqmanFrames(TAQMAN_SAMPLES.map(taqmanMessage), framing)) {
         wire.receive(frame);
       }
       wire.receive(EOT);
-    }
 
-    expectResults(wire.saved());
-  });
+      expectResults(wire.saved());
+
+      // How the bytes were split must not change what is stored: each result
+      // keeps its own message as raw text, never the rest of the batch.
+      const whole = createWireHarness({ protocol, machineType: 'roche-cobas-taqman' });
+      whole.receive(taqmanSession(TAQMAN_SAMPLES, framing));
+      expect(whole.saved().map(result => result.raw_text)).toEqual(wire.saved().map(result => result.raw_text));
+      for (const result of wire.saved()) {
+        expect(result.raw_text.match(/\|\^\^\^ALL\|/g), result.order_id).toHaveLength(1);
+      }
+    });
+  }
 });

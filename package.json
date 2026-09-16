@@ -83,7 +83,7 @@
     "@types/node": "24.13.3",
     "@typescript-eslint/eslint-plugin": "8.69.0",
     "@typescript-eslint/parser": "8.69.0",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "4.1.11",
     "angular-eslint": "22.2.0",
     "bootstrap": "5.3.8",
     "concurrently": "10.0.5",

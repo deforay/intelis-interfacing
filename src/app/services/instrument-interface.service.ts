@@ -465,17 +465,24 @@ export class InstrumentInterfaceService {
     const astmText = that.utilitiesService.hex2ascii(data.toString('hex'));
 
     if (astmProtocolType !== COMMUNICATION_PROTOCOL.ASTM_CHECKSUM) {
-      // Without checksums there is nothing to verify, but ENQ, EOT and NAK
-      // still say where a session starts and ends, and they are only
-      // recognised on their own. A read can carry them together with frames
-      // (a whole session in one read is common on a fast link), so they are
-      // separated first. Otherwise the EOT is buffered as data, the session is
-      // never completed, and its results wait for the next session's EOT or
-      // are lost when the connection drops.
-      for (const piece of astmText.split(/([\x04\x05\x15])/)) {
-        if (piece) {
-          that.handleASTMChunk(astmProtocolType, instrumentConnectionData, piece);
+      // Without checksums there is nothing to verify, but a read can still
+      // carry several frames and the ENQ, EOT or NAK around them (a whole
+      // session in one read is common on a fast link). Each frame and each
+      // control byte is handled as if it had arrived on its own, so a
+      // session is completed at its EOT and every message keeps its own
+      // stored raw text, however the bytes were split.
+      for (const piece of astmText.split(/([\x04\x05\x15])|(?=\x02)/)) {
+        if (!piece) {
+          continue;
         }
+        if (piece === '\x05') {
+          // ENQ opens a session: acknowledge it, as in checksum mode, but it
+          // is not part of the transmission. Buffering it made an empty
+          // session look like one that carried data.
+          that.astmHelper.sendACK(instrumentConnectionData, 'Sending ACK');
+          continue;
+        }
+        that.handleASTMChunk(astmProtocolType, instrumentConnectionData, piece);
       }
       return;
     }
@@ -569,6 +576,16 @@ export class InstrumentInterfaceService {
       }
 
       const sampleResults = parsingResult.sampleResults ?? [];
+      for (let unreadable = 0; unreadable < (parsingResult.unreadableOrders ?? 0); unreadable++) {
+        that.recordProcessingFailure('result_parsing_failed', instrumentConnectionData);
+      }
+      if (parsingResult.unreadableOrders) {
+        that.utilitiesService.logger(
+          'error',
+          `${parsingResult.unreadableOrders} order(s) in the ASTM transmission could not be read; the raw data is kept`,
+          instrumentConnectionData.instrumentId
+        );
+      }
       if (sampleResults.length === 0) {
         that.utilitiesService.logger('warn', 'No ASTM results extracted from transmission', instrumentConnectionData.instrumentId);
         that.recordProcessingFailure('no_results_extracted', instrumentConnectionData);

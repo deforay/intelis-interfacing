@@ -194,13 +194,21 @@ export class RawDataProcessorService {
         // The same extraction live processing uses, so a stored transmission
         // yields exactly the results it yielded when it arrived.
         const astmHelper = this.instrumentInterfaceService['astmHelper'];
+        let unreadableOrders = 0;
         for (const part of parts) {
           if (!part) continue;
-          for (const sampleResult of astmHelper.extractSampleResultsFromASTM(part.split(/<CR>/), part)) {
+          const extraction = astmHelper.extractASTMResults(part.split(/<CR>/), part);
+          unreadableOrders += extraction.unreadableOrders;
+          for (const sampleResult of extraction.results) {
             persistencePromises.push(this.instrumentInterfaceService.saveASTMResult(sampleResult, instrumentConnectionData));
           }
         }
         persistenceResults = await this.withPersistenceTimeout(Promise.all(persistencePromises));
+        // An order that could not be read is a result not recovered: the
+        // entry has not been reprocessed, whatever else it yielded.
+        if (unreadableOrders > 0) {
+          return false;
+        }
       } else {
         throw new Error(`Unsupported protocol: ${protocol}`);
       }

@@ -348,7 +348,8 @@ describe('InstrumentInterfaceService ASTM frames', () => {
     service.handleTCPResponse(key, Buffer.from(frame(order, '00') + frame(result, 'ZZ'), 'binary'));
     service.handleTCPResponse(key, Buffer.from(EOT, 'binary'));
 
-    expect(sentBytes()).toEqual([ACK, ACK, ACK]);
+    // One ACK per frame, as E1381 has it, even when two frames share a read.
+    expect(sentBytes()).toEqual([ACK, ACK, ACK, ACK]);
     expect(sentBytes()).not.toContain(NAK);
     expect(dbService.recordTestResults).toHaveBeenCalledOnce();
   });

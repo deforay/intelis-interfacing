@@ -9,6 +9,18 @@ export interface ASTMProcessingResult {
   discarded?: boolean;
   rawData?: string;
   sampleResults?: any[];
+  /** Orders present in the transmission whose result could not be read. */
+  unreadableOrders?: number;
+}
+
+export interface ASTMExtraction {
+  results: any[];
+  /**
+   * Groups that carry an order record but produced no result. Distinct from
+   * a group without an order record at all, such as a lone header, which is
+   * not a result and not a failure.
+   */
+  unreadableOrders: number;
 }
 
 /**
@@ -452,6 +464,7 @@ export class ASTMHelperService {
       const fullDataArray = astmData.split(this.START);
 
       const sampleResults: any[] = [];
+      let unreadableOrders = 0;
 
       for (const partData of fullDataArray) {
         if (!partData) {
@@ -469,10 +482,10 @@ export class ASTMHelperService {
           continue;
         }
 
-        const extracted = this.extractSampleResultsFromASTM(astmArray, partData);
-        if (extracted.length > 0) {
-          sampleResults.push(...extracted);
-        } else {
+        const extraction = this.extractASTMResults(astmArray, partData);
+        sampleResults.push(...extraction.results);
+        unreadableOrders += extraction.unreadableOrders;
+        if (extraction.results.length === 0) {
           this.utilitiesService.logger('warn', 'Failed to extract sample result from ASTM chunk', instrumentId);
         }
       }
@@ -480,7 +493,8 @@ export class ASTMHelperService {
       return {
         completed: true,
         rawData: accumulatedPayload,
-        sampleResults
+        sampleResults,
+        unreadableOrders
       };
     }
 
@@ -597,7 +611,16 @@ export class ASTMHelperService {
    * @returns Sample results in transmission order; empty when no order could be read
    */
   extractSampleResultsFromASTM(astmArray: string[], partData: string): any[] {
+    return this.extractASTMResults(astmArray, partData).results;
+  }
+
+  /**
+   * As extractSampleResultsFromASTM, and also counts the orders that could
+   * not be read, so a result that is lost is reported rather than skipped.
+   */
+  extractASTMResults(astmArray: string[], partData: string): ASTMExtraction {
     const results: any[] = [];
+    let unreadableOrders = 0;
     for (const group of this.splitASTMRecordsByOrder(astmArray)) {
       const dataArray = this.getASTMDataBlock(group);
       if (Object.keys(dataArray).length === 0) {
@@ -606,9 +629,11 @@ export class ASTMHelperService {
       const sampleResult = this.extractSampleResultFromASTM(dataArray, partData);
       if (sampleResult) {
         results.push(sampleResult);
+      } else if (dataArray['O']?.length > 0) {
+        unreadableOrders++;
       }
     }
-    return results;
+    return { results, unreadableOrders };
   }
 
   /**
@@ -635,7 +660,9 @@ export class ASTMHelperService {
 
         const resultStatus = oSegmentFields[25]; // X = Failed, F = Final, P = Preliminary
 
-        const universalTestIdentifier = oSegmentFields[4];
+        // An order record can end before its test identifier; that is no
+        // reason to lose the result that follows it.
+        const universalTestIdentifier = oSegmentFields[4] ?? '';
         const testTypeDetails = universalTestIdentifier.split('^');
         const testType = testTypeDetails.length > 1 ? testTypeDetails[3] : ''; // Adjust based on your ASTM format
 
