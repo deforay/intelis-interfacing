@@ -32,6 +32,14 @@ describe('date display format', () => {
     expect(formatDisplayDateTime('2026-01-02', 'DD/MM/YYYY')).toBe('02/01/2026');
   });
 
+  it('shows a value that is only partly a date, or an impossible one, exactly as stored', () => {
+    for (const value of ['2026-09-16garbage', '2026-02-31 10:00:00', '2026-09-16 24:00:00', '2026-09-16 1:05:00', '2026091612345678']) {
+      expect(formatDisplayDateTime(value, 'DD-MM-YYYY'), value).toBe(value);
+    }
+    expect(formatDisplayDateTime('2026-09-16 13:47:03.123', 'DD-MM-YYYY')).toBe('16-09-2026 13:47:03');
+    expect(formatDisplayDateTime('2028-02-29', 'DD-MMM-YYYY')).toBe('29-Feb-2028');
+  });
+
   it('shows a value that is not a date as it is, and nothing for an empty one', () => {
     expect(formatDisplayDateTime('not recorded', 'DD-MM-YYYY')).toBe('not recorded');
     expect(formatDisplayDateTime('2026-13-40 10:00:00', 'DD-MM-YYYY')).toBe('2026-13-40 10:00:00');

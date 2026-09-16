@@ -40,10 +40,15 @@ const two = (value: number) => String(value).padStart(2, '0');
  * "2026-09-16 13:47:03" is shown as 13:47:03 on every computer.
  */
 function parseStored(value: string): DateParts | null {
-  const match = /^(\d{4})-?(\d{2})-?(\d{2})(?:[ T]?(\d{2}):?(\d{2})(?::?(\d{2}))?)?/.exec(value.trim());
+  // The whole value must be a date, optionally with a time, fractional seconds
+  // and a zone. Anything else is shown as stored rather than half-read.
+  const match = /^(\d{4})-?(\d{2})-?(\d{2})(?:[ T]?(\d{2}):?(\d{2})(?::?(\d{2}))?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$/
+    .exec(value.trim());
   if (!match) return null;
   const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const daysInMonth = new Date(year, month, 0).getDate();
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth) return null;
+  if (match[4] !== undefined && (Number(match[4]) > 23 || Number(match[5]) > 59 || Number(match[6] ?? 0) > 59)) return null;
   const time = match[4] === undefined ? null : `${match[4]}:${match[5]}:${match[6] ?? '00'}`;
   return { year, month, day, time };
 }
