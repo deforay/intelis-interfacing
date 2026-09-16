@@ -7,7 +7,7 @@ if ! command -v nvm &>/dev/null; then
 
     # Source NVM to make it available in the current shell
     export NVM_DIR="$HOME/.nvm"
-    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+    [[ -s "$NVM_DIR/nvm.sh" ]] && \. "$NVM_DIR/nvm.sh"
     echo "NVM installed successfully."
 else
     echo "NVM is already installed."

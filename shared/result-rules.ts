@@ -49,17 +49,23 @@ function isHL7(protocol: string | undefined): boolean {
  */
 export function normalizeResultRules(rules: unknown): ResultRule[] {
   if (!Array.isArray(rules)) return [];
-  const normalized: ResultRule[] = [];
-  for (const rule of rules) {
-    if (!rule || typeof rule !== 'object') continue;
-    const candidate = rule as Record<string, unknown>;
-    const match = candidate['match'] === 'contains' ? 'contains' : candidate['match'] === 'exact' ? 'exact' : null;
-    const value = typeof candidate['value'] === 'string' ? candidate['value'] : '';
-    const replaceWith = typeof candidate['replaceWith'] === 'string' ? candidate['replaceWith'] : '';
-    if (!match || value.trim() === '' || replaceWith.trim() === '') continue;
-    normalized.push({ match, value, replaceWith, ...(candidate['ignoreCase'] === true ? { ignoreCase: true } : {}) });
-  }
-  return normalized;
+  return rules.map(normalizeResultRule).filter((rule): rule is ResultRule => rule !== null);
+}
+
+function textField(candidate: Record<string, unknown>, field: string): string {
+  const value = candidate[field];
+  return typeof value === 'string' ? value : '';
+}
+
+function normalizeResultRule(rule: unknown): ResultRule | null {
+  if (!rule || typeof rule !== 'object') return null;
+  const candidate = rule as Record<string, unknown>;
+  const match = candidate['match'];
+  if (match !== 'exact' && match !== 'contains') return null;
+  const value = textField(candidate, 'value');
+  const replaceWith = textField(candidate, 'replaceWith');
+  if (value.trim() === '' || replaceWith.trim() === '') return null;
+  return { match, value, replaceWith, ...(candidate['ignoreCase'] === true ? { ignoreCase: true } : {}) };
 }
 
 /**

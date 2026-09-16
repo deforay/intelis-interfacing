@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy } from '@angular/core';
+import { Component, ChangeDetectionStrategy, OnInit } from '@angular/core';
 import { ElectronService } from './core/services';
 import { TranslateService } from '@ngx-translate/core';
 import { v4 as uuidv4 } from 'uuid';
@@ -14,7 +14,7 @@ import { ResultWebhookSyncService } from './services/result-webhook-sync.service
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrls: ['./app.component.scss']
 })
-export class AppComponent {
+export class AppComponent implements OnInit {
   private sessionId: string | null = null;
 
   constructor(
@@ -29,11 +29,6 @@ export class AppComponent {
 
     if (electronService.isElectron) {
       this.initializeSession();
-      void this.databaseService.recordTelemetryEvent({
-        eventType: 'application.started',
-        category: 'usage',
-        outcome: 'started'
-      });
       this.intelisResultSync.start();
       this.intelisUsageSync.start();
       this.resultWebhookSync.start();
@@ -47,6 +42,16 @@ export class AppComponent {
 
 
     window.addEventListener('beforeunload', this.handleBeforeUnload.bind(this));
+  }
+
+  ngOnInit(): void {
+    if (this.electronService.isElectron) {
+      void this.databaseService.recordTelemetryEvent({
+        eventType: 'application.started',
+        category: 'usage',
+        outcome: 'started'
+      });
+    }
   }
 
   initializeSession(): void {

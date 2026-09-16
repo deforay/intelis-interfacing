@@ -26,7 +26,7 @@ mkdir -p "$hooks_dir" 2>/dev/null || {
 }
 
 for src in scripts/hooks/*; do
-    [ -e "$src" ] || continue
+    [[ -e "$src" ]] || continue
     name="$(basename "$src")"
     chmod +x "$src" 2>/dev/null || true
     if ln -sf "$root/scripts/hooks/$name" "$hooks_dir/$name" 2>/dev/null; then

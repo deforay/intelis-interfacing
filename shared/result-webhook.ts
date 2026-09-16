@@ -230,38 +230,20 @@ export function resolveResultWebhookTarget(
   request: Partial<ResultWebhookSaveRequest> | null | undefined,
   stored: StoredResultWebhook | null
 ): ResolvedResultWebhookTarget {
-  let url: string;
-  try {
-    url = normalizeResultWebhookUrl(request?.url);
-  } catch (error) {
-    throw new ResultWebhookValidationError('invalid_url', error instanceof Error ? error.message : 'Enter a valid receiver URL.');
-  }
+  const url = validatedReceiverUrl(request?.url);
   if (!isResultWebhookAuthType(request?.authType)) {
     throw new ResultWebhookValidationError('invalid_auth_type', 'Choose how the receiver authenticates requests.');
   }
 
   const authType = request.authType;
-  const username = authType === 'basic' ? (request.username || '').trim() : '';
-  if (authType === 'basic' && (!username || username.includes(':') || /[\r\n]/.test(username))) {
-    throw new ResultWebhookValidationError('invalid_username', 'Enter a username without a colon for Basic authentication.');
-  }
+  const username = validatedUsername(authType, request.username);
   if (authType === 'none') {
     return { url, authType, username, secret: { kind: 'none' } };
   }
 
   const provided = typeof request.secret === 'string' ? request.secret : '';
   if (provided) {
-    // Bearer tokens and API keys travel as raw header values, which only carry
-    // visible ASCII reliably. Basic credentials are base64-encoded first.
-    const valid = authType === 'basic' ? !/[\r\n]/.test(provided) : /^[\x21-\x7E]+$/.test(provided);
-    if (!valid) {
-      throw new ResultWebhookValidationError(
-        'invalid_secret',
-        authType === 'basic'
-          ? 'The password cannot contain line breaks.'
-          : 'The token or key can contain only visible ASCII characters, without spaces.'
-      );
-    }
+    assertSecretCanBeSent(authType, provided);
     return { url, authType, username, secret: { kind: 'provided', secret: provided } };
   }
 
@@ -273,6 +255,37 @@ export function resolveResultWebhookTarget(
     stored?.encryptedSecret && stored.authType === authType
       ? 'The receiver address changed. Enter the secret again for the new receiver.'
       : 'Enter the receiver secret for this authentication type.'
+  );
+}
+
+function validatedReceiverUrl(value: string | undefined): string {
+  try {
+    return normalizeResultWebhookUrl(value);
+  } catch (error) {
+    throw new ResultWebhookValidationError('invalid_url', error instanceof Error ? error.message : 'Enter a valid receiver URL.');
+  }
+}
+
+function validatedUsername(authType: ResultWebhookAuthType, value: string | undefined): string {
+  if (authType !== 'basic') return '';
+  const username = (value || '').trim();
+  if (!username || username.includes(':') || /[\r\n]/.test(username)) {
+    throw new ResultWebhookValidationError('invalid_username', 'Enter a username without a colon for Basic authentication.');
+  }
+  return username;
+}
+
+/**
+ * Bearer tokens and API keys travel as raw header values, which only carry
+ * visible ASCII reliably. Basic credentials are base64-encoded first.
+ */
+function assertSecretCanBeSent(authType: ResultWebhookAuthType, secret: string): void {
+  if (authType === 'basic' ? !/[\r\n]/.test(secret) : /^[\x21-\x7E]+$/.test(secret)) return;
+  throw new ResultWebhookValidationError(
+    'invalid_secret',
+    authType === 'basic'
+      ? 'The password cannot contain line breaks.'
+      : 'The token or key can contain only visible ASCII characters, without spaces.'
   );
 }
 
@@ -348,21 +361,27 @@ export function planResultWebhookBatches(
 /** Guards the IPC boundary: what reaches the network must be rows this module built. */
 export function isValidResultWebhookBatch(results: unknown): results is ResultWebhookResult[] {
   if (!Array.isArray(results) || results.length === 0) return false;
-  const allowed = new Set<string>(RESULT_WEBHOOK_RESULT_FIELDS);
   const seen = new Set<number>();
   for (const row of results) {
-    if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
-    const record = row as Record<string, unknown>;
-    if (Object.keys(record).some(field => !allowed.has(field))) return false;
-    if (!Number.isInteger(record['id']) || seen.has(Number(record['id']))) return false;
-    if (typeof record['ingestion_id'] !== 'string' || record['ingestion_id'] === '') return false;
-    if (typeof record['order_id'] !== 'string') return false;
-    for (const field of RESULT_WEBHOOK_RESULT_FIELDS) {
-      const value = record[field];
-      if (value === null || value === undefined) continue;
-      if (NUMERIC_FIELDS.has(field) ? typeof value !== 'number' : typeof value !== 'string') return false;
-    }
-    seen.add(Number(record['id']));
+    if (!isValidResultWebhookRow(row) || seen.has(row.id)) return false;
+    seen.add(row.id);
   }
   return true;
+}
+
+const ALLOWED_RESULT_FIELDS = new Set<string>(RESULT_WEBHOOK_RESULT_FIELDS);
+
+function isValidResultWebhookRow(row: unknown): row is ResultWebhookResult {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
+  const record = row as Record<string, unknown>;
+  return Object.keys(record).every(field => ALLOWED_RESULT_FIELDS.has(field))
+    && Number.isInteger(record['id'])
+    && typeof record['ingestion_id'] === 'string' && record['ingestion_id'] !== ''
+    && typeof record['order_id'] === 'string'
+    && RESULT_WEBHOOK_RESULT_FIELDS.every(field => hasPublishedType(field, record[field]));
+}
+
+function hasPublishedType(field: keyof ResultWebhookResult, value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  return NUMERIC_FIELDS.has(field) ? typeof value === 'number' : typeof value === 'string';
 }

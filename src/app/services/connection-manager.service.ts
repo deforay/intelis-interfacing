@@ -1,5 +1,6 @@
 // src/app/services/connection-manager.service.ts
 import { Injectable, OnDestroy } from '@angular/core';
+import { v4 as uuidv4 } from 'uuid';
 import { InstrumentInterfaceService } from './instrument-interface.service';
 import { ElectronStoreService } from './electron-store.service';
 import { TcpConnectionService } from './tcp-connection.service';
@@ -473,11 +474,7 @@ export class ConnectionManagerService implements OnDestroy {
   }
 
   private generateUuid(): string {
-    // Simple UUID generator
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-      const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
-    });
+    return uuidv4();
   }
 
   private getFormattedDateTime(): string {
