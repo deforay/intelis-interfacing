@@ -910,9 +910,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
         document.body.removeChild(savingNotification);
 
         // Show success notification
-        new window.Notification('Success', {
+        const savedNotice = new window.Notification('Success', {
           body: 'Updated Interface Tool settings'
         });
+        savedNotice.onclick = () => savedNotice.close();
 
         // IMPORTANT: Set a flag in localStorage to indicate we're returning from settings
         localStorage.setItem('returnFromSettings', 'true');

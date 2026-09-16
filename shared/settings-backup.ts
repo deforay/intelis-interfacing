@@ -204,8 +204,10 @@ function stableStringify(value: any): string {
   if (Array.isArray(value)) {
     return `[${value.map(stableStringify).join(',')}]`;
   }
+  // Code-unit order, not localeCompare: the result must be identical on every
+  // computer, whatever its language settings.
   const entries = Object.keys(value)
-    .sort()
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
     .map(key => `${JSON.stringify(key)}:${stableStringify(value[key])}`);
   return `{${entries.join(',')}}`;
 }

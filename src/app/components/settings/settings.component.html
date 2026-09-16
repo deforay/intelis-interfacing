@@ -47,7 +47,10 @@
         <ul class="sidebar-nav">
           <li *ngFor="let section of sections"
               [class.active]="activeSection === section.id"
-              (click)="setActiveSection(section.id)">
+              role="button" tabindex="0"
+              (click)="setActiveSection(section.id)"
+              (keydown.enter)="setActiveSection(section.id)"
+              (keydown.space)="$event.preventDefault(); setActiveSection(section.id)">
             <i [class]="section.icon"></i>
             <span>{{ section.label }}</span>
             <span class="setup-indicator not-configured"

@@ -743,6 +743,14 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
     this.systemLogsExpanded = !this.systemLogsExpanded;
   }
 
+  /** Escape closes the log drawer wherever focus is. */
+  @HostListener('document:keydown.escape')
+  closeSystemLogsOnEscape(): void {
+    if (this.systemLogsExpanded) {
+      this.systemLogsExpanded = false;
+    }
+  }
+
   private loadRecentLogsForNewInstruments(instruments: any[]) {
     const that = this;
     instruments.forEach(instrument => {

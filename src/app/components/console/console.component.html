@@ -53,7 +53,8 @@
   </header>
 
   <aside class="system-log-drawer" [class.open]="systemLogsExpanded">
-    <div class="system-log-backdrop" *ngIf="systemLogsExpanded" (click)="toggleSystemLogs()"></div>
+    <div class="system-log-backdrop" *ngIf="systemLogsExpanded" (click)="toggleSystemLogs()"
+      (keydown.escape)="toggleSystemLogs()"></div>
     <div class="system-log-drawer-panel" *ngIf="systemLogsExpanded">
       <div class="system-log-drawer-header">
         <div class="system-log-drawer-title">
@@ -114,9 +115,12 @@
   <div class="instrument-container">
     <div class="instrument-tabs">
       <div class="tabs-wrapper">
-        <ul class="tabs-list">
+        <ul class="tabs-list" role="tablist">
           <li *ngFor="let instrument of availableInstruments; let i = index" class="tab-item"
-            [class.active]="selectedTabIndex === i" (click)="selectTab(i)">
+            [class.active]="selectedTabIndex === i" role="tab" tabindex="0"
+            [attr.aria-selected]="selectedTabIndex === i"
+            (click)="selectTab(i)" (keydown.enter)="selectTab(i)"
+            (keydown.space)="$event.preventDefault(); selectTab(i)">
             <div class="tab-content">
               <div class="tab-icon">
                 <i [ngClass]="{

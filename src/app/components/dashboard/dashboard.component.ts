@@ -120,7 +120,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
       return undefined;
     }
     return data.reduce((latest, current) =>
-      new Date(latest.added_on) > new Date(current.added_on) ? latest : current
+      new Date(latest.added_on) > new Date(current.added_on) ? latest : current,
+      data[0]
     );
   }
 
