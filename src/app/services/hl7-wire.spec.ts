@@ -303,24 +303,28 @@ describe('HL7 over the wire', () => {
   });
 
   describe('rejects or contains non-conforming messages', () => {
-    it('ACKs but does not store a message without a specimen', () => {
-      const wire = harness();
+    // Each analyzer has its own parser, and each has its own guard for these.
+    for (const machineType of ['generic', 'abbott-alinity-m', 'roche-cobas-5800', 'roche-cobas-6800']) {
+      it(`ACKs but does not store a message without a specimen (${machineType})`, () => {
+        const wire = harness(machineType);
 
-      wire.receive(mllp(MISSING_SPM));
+        wire.receive(mllp(MISSING_SPM));
 
-      expect(wire.sent()).toHaveLength(1);
-      expect(wire.saved()).toHaveLength(0);
-      expect(wire.raw()).toHaveLength(1);
-    });
+        expect(wire.sent()).toHaveLength(1);
+        expect(wire.saved()).toHaveLength(0);
+        expect(wire.raw()).toHaveLength(1);
+      });
 
-    it('ACKs but does not store a message without an observation', () => {
-      const wire = harness();
+      it(`ACKs but does not store a message without an observation (${machineType})`, () => {
+        const wire = harness(machineType);
 
-      wire.receive(mllp(MISSING_OBX));
+        wire.receive(mllp(MISSING_OBX));
 
-      expect(wire.sent()).toHaveLength(1);
-      expect(wire.saved()).toHaveLength(0);
-    });
+        expect(wire.sent()).toHaveLength(1);
+        expect(wire.saved()).toHaveLength(0);
+        expect(wire.raw()).toHaveLength(1);
+      });
+    }
 
     it('survives a block that is not HL7 and still processes the next one', () => {
       const wire = harness();

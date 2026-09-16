@@ -171,15 +171,19 @@ export class RawDataProcessorService {
 
       let persistenceResults: boolean[] = [];
       if (protocol === 'hl7') {
+        // Raw data keeps the MLLP block exactly as it arrived. Unwrap it the
+        // way live processing does, or framing bytes end up in the stored
+        // records and line breaks are split differently.
+        const hl7Message = this.instrumentInterfaceService['hl7Helper'].unwrapMLLPBlock(rawData);
         let persistencePromise: Promise<boolean[]>;
         if (machineType === 'abbott-alinity-m') {
-          persistencePromise = this.instrumentInterfaceService.processHL7DataAlinity(instrumentConnectionData, rawData);
+          persistencePromise = this.instrumentInterfaceService.processHL7DataAlinity(instrumentConnectionData, hl7Message);
         } else if (machineType === 'roche-cobas-5800') {
-          persistencePromise = this.instrumentInterfaceService.processHL7DataRoche5800(instrumentConnectionData, rawData);
+          persistencePromise = this.instrumentInterfaceService.processHL7DataRoche5800(instrumentConnectionData, hl7Message);
         } else if (machineType === 'roche-cobas-6800' || machineType === 'roche-cobas-8800') {
-          persistencePromise = this.instrumentInterfaceService.processHL7DataRoche68008800(instrumentConnectionData, rawData);
+          persistencePromise = this.instrumentInterfaceService.processHL7DataRoche68008800(instrumentConnectionData, hl7Message);
         } else {
-          persistencePromise = this.instrumentInterfaceService.processHL7Data(instrumentConnectionData, rawData);
+          persistencePromise = this.instrumentInterfaceService.processHL7Data(instrumentConnectionData, hl7Message);
         }
         persistenceResults = await this.withPersistenceTimeout(persistencePromise);
       } else if (protocol === 'astm-checksum' || protocol === 'astm-nonchecksum') {

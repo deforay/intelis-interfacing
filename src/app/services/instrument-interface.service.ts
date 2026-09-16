@@ -465,8 +465,18 @@ export class InstrumentInterfaceService {
     const astmText = that.utilitiesService.hex2ascii(data.toString('hex'));
 
     if (astmProtocolType !== COMMUNICATION_PROTOCOL.ASTM_CHECKSUM) {
-      // Without checksums there is nothing to verify: accept every chunk as-is
-      that.handleASTMChunk(astmProtocolType, instrumentConnectionData, astmText);
+      // Without checksums there is nothing to verify, but ENQ, EOT and NAK
+      // still say where a session starts and ends, and they are only
+      // recognised on their own. A read can carry them together with frames
+      // (a whole session in one read is common on a fast link), so they are
+      // separated first. Otherwise the EOT is buffered as data, the session is
+      // never completed, and its results wait for the next session's EOT or
+      // are lost when the connection drops.
+      for (const piece of astmText.split(/([\x04\x05\x15])/)) {
+        if (piece) {
+          that.handleASTMChunk(astmProtocolType, instrumentConnectionData, piece);
+        }
+      }
       return;
     }
 
@@ -646,9 +656,7 @@ export class InstrumentInterfaceService {
         that.utilitiesService.logger('error', 'Failed to save raw data ' + JSON.stringify(err), instrumentConnectionData.instrumentId);
       });
 
-      let completeMessage = message.replace(/[\x0b\x1c]/g, '');
-      completeMessage = completeMessage.trim();
-      completeMessage = completeMessage.replace(/[\r\n\x0B\x0C\u0085\u2028\u2029]+/gm, '\r');
+      const completeMessage = that.hl7Helper.unwrapMLLPBlock(message);
 
       // A block that is not HL7 must not take the socket handler down with it.
       // The processors throw synchronously on a parse failure, which is what

@@ -38,6 +38,7 @@ export interface WireHarnessOptions {
 
 export interface WireHarness {
   service: InstrumentInterfaceService;
+  utilities: UtilitiesService;
   astmHelper: ASTMHelperService;
   hl7Helper: HL7HelperService;
   connection: any;
@@ -229,6 +230,7 @@ export function createWireHarness(options: WireHarnessOptions): WireHarness {
 
   return {
     service,
+    utilities,
     astmHelper,
     hl7Helper,
     connection,

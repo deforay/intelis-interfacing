@@ -15,6 +15,7 @@ describe('RawDataProcessorService', () => {
       get: vi.fn((key: string) => key === 'instrumentsConfig' ? [configuredInstrument] : {})
     };
     const instrumentInterface = {
+      hl7Helper: { unwrapMLLPBlock: vi.fn((block: string) => block) },
       processHL7Data: vi.fn().mockResolvedValue([true]),
       processHL7DataAlinity: vi.fn().mockResolvedValue([true]),
       processHL7DataRoche5800: vi.fn().mockResolvedValue([true]),

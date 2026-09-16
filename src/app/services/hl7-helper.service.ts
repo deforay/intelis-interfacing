@@ -450,6 +450,21 @@ export class HL7HelperService {
   }
 
   /**
+   * The message inside one MLLP block, as every parser expects it: without
+   * the VT and FS framing bytes, trimmed, and with every line break written
+   * as the CR that separates HL7 segments.
+   *
+   * Used for a block received live and for the same block read back from
+   * raw data, so reprocessing parses exactly what live processing parsed.
+   */
+  unwrapMLLPBlock(block: string): string {
+    return (block ?? '')
+      .replace(/[\x0b\x1c]/g, '')
+      .trim()
+      .replace(/[\r\n\x0B\x0C\u0085\u2028\u2029]+/gm, '\r');
+  }
+
+  /**
    * True when these bytes hold a block that is complete but for its <CR>, the
    * one case extractMLLPMessages holds back.
    * @param buffered Bytes received so far that have not been consumed

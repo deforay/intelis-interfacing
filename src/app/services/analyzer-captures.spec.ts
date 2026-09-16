@@ -79,6 +79,15 @@ describe('Abbott m2000 capture (ASTM)', () => {
     expectRun(wire.saved());
   });
 
+  it('stores the run when a session without checksums arrives in a single read', () => {
+    const wire = createWireHarness({ protocol: 'astm-nonchecksum', machineType: 'abbott-m2000' });
+
+    wire.receive(m2000Session(M2000_RUN_SAMPLES));
+
+    expectRun(wire.saved());
+    expect(wire.raw()).toHaveLength(1);
+  });
+
   it('handles the session arriving in segment-sized chunks', () => {
     const wire = createWireHarness({ protocol: 'astm-checksum', machineType: 'abbott-m2000' });
 
