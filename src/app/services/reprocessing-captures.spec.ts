@@ -10,7 +10,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createWireHarness, mllp, ENQ, EOT, WireProtocol } from '../testing/wire-harness';
 import { RawDataProcessorService } from './raw-data-processor.service';
-import { M2000_RUN_SAMPLES, m2000Session } from '../testing/fixtures/captured/abbott-m2000';
+import {
+  M2000_HEADER, M2000_RUN_SAMPLES, m2000Frames, m2000Message, m2000Session
+} from '../testing/fixtures/captured/abbott-m2000';
 import { ALINITY_BATCH, alinityMessage } from '../testing/fixtures/captured/abbott-alinity-m';
 import { COBAS_5800_CAPTURE } from '../testing/fixtures/captured/roche-cobas-5800';
 import { COBAS_6800_CAPTURE } from '../testing/fixtures/captured/roche-cobas-6800';
@@ -131,4 +133,27 @@ describe('reprocessing a stored capture', () => {
       expect(project(saved)).toEqual(project(live.saved()));
     });
   }
+});
+
+describe('reprocessing a run that also carries a message without an order', () => {
+  // Seen in production m2000 runs: a message with a header and patient record
+  // but no order between two complete ones. Live processing skips it. Read
+  // back from raw data it was reported as a failed parse, although every
+  // result came back identical.
+  it('reproduces the results without reporting a failure', async () => {
+    const messages = [
+      m2000Message(M2000_RUN_SAMPLES[0]),
+      [M2000_HEADER, 'P|1', 'L|1'],
+      m2000Message(M2000_RUN_SAMPLES[1])
+    ];
+    const live = createWireHarness({ protocol: 'astm-checksum', machineType: 'abbott-m2000' });
+    live.receive(ENQ + m2000Frames(messages).join('') + EOT);
+    expect(live.saved()).toHaveLength(2);
+
+    const { outcome, saved, failures } = await reprocess('astm-checksum', 'abbott-m2000', live.raw());
+
+    expect(outcome).toEqual({ success: 1, failed: 0 });
+    expect(failures).toEqual([]);
+    expect(project(saved)).toEqual(project(live.saved()));
+  });
 });

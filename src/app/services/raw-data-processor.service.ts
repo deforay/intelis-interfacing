@@ -191,18 +191,13 @@ export class RawDataProcessorService {
         const parts = astmData.split(this.instrumentInterfaceService['astmHelper'].getStartMarker());
         const persistencePromises: Promise<boolean>[] = [];
 
+        // The same extraction live processing uses, so a stored transmission
+        // yields exactly the results it yielded when it arrived.
         const astmHelper = this.instrumentInterfaceService['astmHelper'];
         for (const part of parts) {
           if (!part) continue;
-          const astmArray = part.split(/<CR>/);
-
-          for (const group of astmHelper.splitASTMRecordsByOrder(astmArray)) {
-            const dataBlock = astmHelper.getASTMDataBlock(group);
-            if (Object.keys(dataBlock).length > 0) {
-              persistencePromises.push(
-                this.instrumentInterfaceService.processStoredASTMDataBlock(dataBlock, part, instrumentConnectionData)
-              );
-            }
+          for (const sampleResult of astmHelper.extractSampleResultsFromASTM(part.split(/<CR>/), part)) {
+            persistencePromises.push(this.instrumentInterfaceService.saveASTMResult(sampleResult, instrumentConnectionData));
           }
         }
         persistenceResults = await this.withPersistenceTimeout(Promise.all(persistencePromises));

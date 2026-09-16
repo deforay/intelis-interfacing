@@ -576,9 +576,7 @@ export class InstrumentInterfaceService {
       }
 
       for (const sampleResult of sampleResults) {
-        sampleResult.test_location = instrumentConnectionData.labName;
-        sampleResult.machine_used = instrumentConnectionData.instrumentId;
-        that.saveResult(sampleResult, instrumentConnectionData);
+        that.saveASTMResult(sampleResult, instrumentConnectionData);
       }
     } else {
       that.utilitiesService.logger('info', astmProtocolType.toUpperCase() + ' | Receiving....' + astmText, instrumentConnectionData.instrumentId);
@@ -843,28 +841,14 @@ export class InstrumentInterfaceService {
     });
   }
 
-  private saveASTMDataBlock(dataArray: {}, partData: string, instrumentConnectionData: InstrumentConnectionStack): Promise<boolean> {
-    const that = this;
-
-    const segmentTypes = Object.keys(dataArray);
-    that.utilitiesService.logger('info', 'Processing ASTM segments: ' + (segmentTypes.length ? segmentTypes.join(', ') : 'none'), instrumentConnectionData.instrumentId);
-
-    // Extract sample result from the ASTM data
-    const sampleResult = that.astmHelper.extractSampleResultFromASTM(dataArray, partData);
-
-    if (sampleResult) {
-      // Add location information
-      sampleResult.test_location = instrumentConnectionData.labName;
-      sampleResult.machine_used = instrumentConnectionData.instrumentId;
-
-      // Save the result
-      return that.saveResult(sampleResult, instrumentConnectionData);
-    } else {
-      that.utilitiesService.logger('error', 'Order record not found in the following ASTM data block', instrumentConnectionData.instrumentId);
-      that.utilitiesService.logger('error', JSON.stringify(dataArray), instrumentConnectionData.instrumentId);
-      that.recordProcessingFailure('result_parsing_failed', instrumentConnectionData);
-      return Promise.resolve(false);
-    }
+  /**
+   * Saves one result extracted from an ASTM transmission, received live or
+   * read back from raw data, with the lab and instrument it came through.
+   */
+  saveASTMResult(sampleResult: any, instrumentConnectionData: InstrumentConnectionStack): Promise<boolean> {
+    sampleResult.test_location = instrumentConnectionData.labName;
+    sampleResult.machine_used = instrumentConnectionData.instrumentId;
+    return this.saveResult(sampleResult, instrumentConnectionData);
   }
 
   private recordProcessingFailure(
@@ -887,9 +871,6 @@ export class InstrumentInterfaceService {
     });
   }
 
-  processStoredASTMDataBlock(dataArray: {}, partData: string, instrumentConnectionData: InstrumentConnectionStack): Promise<boolean> {
-    return this.saveASTMDataBlock(dataArray, partData, instrumentConnectionData);
-  }
 
   // TEST ORDERS SECTION
 
