@@ -81,8 +81,8 @@
             </div>
             <div class="card-body">
               <div class="form-group">
-                <label>Testing Lab Code/ID</label>
-                <input type="text" formControlName="labID" class="form-control" placeholder="Lab Code/ID" required>
+                <label for="settingsLabId">Testing Lab Code/ID</label>
+                <input id="settingsLabId" type="text" formControlName="labID" class="form-control" placeholder="Lab Code/ID" required>
                 <div class="error-message"
                   *ngIf="settingsForm.get('commonSettings.labID')?.touched && settingsForm.get('commonSettings.labID')?.errors?.['required']">
                   Lab ID is required
@@ -90,8 +90,8 @@
               </div>
 
               <div class="form-group">
-                <label>Testing Lab Name</label>
-                <input type="text" formControlName="labName" class="form-control" placeholder="Lab Name" required>
+                <label for="settingsLabName">Testing Lab Name</label>
+                <input id="settingsLabName" type="text" formControlName="labName" class="form-control" placeholder="Lab Name" required>
                 <div class="error-message"
                   *ngIf="settingsForm.get('commonSettings.labName')?.touched && settingsForm.get('commonSettings.labName')?.errors?.['required']">
                   Lab Name is required
@@ -99,9 +99,9 @@
               </div>
 
               <div class="form-group">
-                <label>Auto-connect on startup</label>
+                <label for="settingsAutoConnect">Auto-connect on startup</label>
                 <div class="custom-select-wrapper">
-                  <select formControlName="interfaceAutoConnect" class="form-control" required>
+                  <select id="settingsAutoConnect" formControlName="interfaceAutoConnect" class="form-control" required>
                     <option value="yes">Yes - Connect automatically</option>
                     <option value="no">No - Manual connection</option>
                   </select>
@@ -109,9 +109,9 @@
               </div>
 
               <div class="form-group">
-                <label>SQLite Database Path</label>
+                <label for="settingsSqlitePath">SQLite Database Path</label>
                 <div class="input-group">
-                  <input type="text" class="form-control readonly" [value]="appPath" readonly>
+                  <input id="settingsSqlitePath" type="text" class="form-control readonly" [value]="appPath" readonly>
                   <button class="btn btn-icon" type="button" title="Copy path to clipboard"
                     (click)="copyToClipboard(appPath)">
                     <i class="fas fa-copy"></i>
@@ -135,12 +135,12 @@
             <div class="card-body">
               <div class="form-row">
                 <div class="form-group half-width">
-                  <label>MySQL Host</label>
-                  <input type="text" formControlName="mysqlHost" class="form-control" placeholder="localhost">
+                  <label for="settingsMysqlHost">MySQL Host</label>
+                  <input id="settingsMysqlHost" type="text" formControlName="mysqlHost" class="form-control" placeholder="localhost">
                 </div>
                 <div class="form-group half-width">
-                  <label>MySQL Port</label>
-                  <input type="text" formControlName="mysqlPort" class="form-control" placeholder="3306"
+                  <label for="settingsMysqlPort">MySQL Port</label>
+                  <input id="settingsMysqlPort" type="text" formControlName="mysqlPort" class="form-control" placeholder="3306"
                     (input)="cleanPortNumber($event, 'mysqlPort')">
                   <div class="error-message" *ngIf="settingsForm.get('commonSettings.mysqlPort')?.hasError('pattern')">
                     Port must be between 1-65535
@@ -150,19 +150,19 @@
 
               <div class="form-row">
                 <div class="form-group half-width">
-                  <label>Database Name</label>
-                  <input type="text" formControlName="mysqlDb" class="form-control" placeholder="database_name">
+                  <label for="settingsMysqlDb">Database Name</label>
+                  <input id="settingsMysqlDb" type="text" formControlName="mysqlDb" class="form-control" placeholder="database_name">
                 </div>
                 <div class="form-group half-width">
-                  <label>Database User</label>
-                  <input type="text" formControlName="mysqlUser" class="form-control" placeholder="username">
+                  <label for="settingsMysqlUser">Database User</label>
+                  <input id="settingsMysqlUser" type="text" formControlName="mysqlUser" class="form-control" placeholder="username">
                 </div>
               </div>
 
               <div class="form-group">
-                <label>Database Password</label>
+                <label for="settingsMysqlPassword">Database Password</label>
                 <div class="input-group">
-                  <input type="password" formControlName="mysqlPassword" name="mysqlPassword" class="form-control"
+                  <input id="settingsMysqlPassword" type="password" formControlName="mysqlPassword" name="mysqlPassword" class="form-control"
                     placeholder="••••••••">
                   <button class="btn btn-icon" type="button" title="Toggle password visibility"
                     (click)="togglePasswordVisibility()">
@@ -328,20 +328,20 @@
               <div class="connection-form" *ngIf="!intelisConnectionState.configured">
                 <div class="form-row">
                   <div class="form-group half-width">
-                    <label>InteLIS URL</label>
-                    <input type="url" formControlName="baseUrl" class="form-control"
+                    <label for="intelisBaseUrl">InteLIS URL</label>
+                    <input id="intelisBaseUrl" type="url" formControlName="baseUrl" class="form-control"
                       placeholder="https://vlsm.example.org" autocomplete="url" aria-label="InteLIS URL">
                   </div>
                   <div class="form-group half-width">
-                    <label>Computer Name</label>
-                    <input type="text" formControlName="displayName" class="form-control"
+                    <label for="intelisDisplayName">Computer Name</label>
+                    <input id="intelisDisplayName" type="text" formControlName="displayName" class="form-control"
                       placeholder="Laboratory computer" maxlength="150" autocomplete="off">
                   </div>
                 </div>
 
                 <div class="form-group">
-                  <label>Connection Code</label>
-                  <input type="text" formControlName="connectionCode" class="form-control connection-code-input"
+                  <label for="intelisConnectionCode">Connection Code</label>
+                  <input id="intelisConnectionCode" type="text" formControlName="connectionCode" class="form-control connection-code-input"
                     placeholder="ABCD-EFGH-JKMP" maxlength="14" autocomplete="one-time-code"
                     inputmode="text" (input)="formatConnectionCode($event)"
                     autocapitalize="characters" spellcheck="false" aria-label="Connection Code">
@@ -361,8 +361,8 @@
                 <summary>Reconnect or reinstall this connection</summary>
                 <p>Generate a Reconnect Code from the InteLIS facility page, then enter it below. The previous credential will stop working.</p>
                 <div class="form-group">
-                  <label>Reconnect Code</label>
-                  <input type="text" formControlName="connectionCode" class="form-control connection-code-input"
+                  <label for="intelisReconnectCode">Reconnect Code</label>
+                  <input id="intelisReconnectCode" type="text" formControlName="connectionCode" class="form-control connection-code-input"
                     placeholder="ABCD-EFGH-JKMP" maxlength="14" autocomplete="one-time-code" inputmode="text"
                     (input)="formatConnectionCode($event)" autocapitalize="characters" spellcheck="false">
                 </div>
@@ -396,15 +396,15 @@
               </p>
 
               <div class="form-group">
-                <label>LIS API Base URL</label>
-                <input type="text" formControlName="url" class="form-control"
+                <label for="lisApiUrl">LIS API Base URL</label>
+                <input id="lisApiUrl" type="text" formControlName="url" class="form-control"
                   placeholder="https://lis.example.com">
               </div>
 
               <div class="form-group">
-                <label>Auth Type</label>
+                <label for="lisApiAuthType">Auth Type</label>
                 <div class="custom-select-wrapper">
-                  <select formControlName="authType" class="form-control">
+                  <select id="lisApiAuthType" formControlName="authType" class="form-control">
                     <option value="none">None</option>
                     <option value="bearer">Bearer Token</option>
                     <option value="basic">Basic Auth</option>
@@ -415,25 +415,25 @@
 
               <div formGroupName="credentials">
                 <div *ngIf="settingsForm.get('lisApiSettings.authType').value === 'bearer'" class="form-group">
-                  <label>Bearer Token</label>
-                  <input type="password" formControlName="token" class="form-control"
+                  <label for="lisApiToken">Bearer Token</label>
+                  <input id="lisApiToken" type="password" formControlName="token" class="form-control"
                     placeholder="Enter bearer token">
                 </div>
                 <div *ngIf="settingsForm.get('lisApiSettings.authType').value === 'basic'">
                   <div class="form-row">
                     <div class="form-group half-width">
-                      <label>Username</label>
-                      <input type="text" formControlName="username" class="form-control" placeholder="Username">
+                      <label for="lisApiUsername">Username</label>
+                      <input id="lisApiUsername" type="text" formControlName="username" class="form-control" placeholder="Username">
                     </div>
                     <div class="form-group half-width">
-                      <label>Password</label>
-                      <input type="password" formControlName="password" class="form-control" placeholder="Password">
+                      <label for="lisApiPassword">Password</label>
+                      <input id="lisApiPassword" type="password" formControlName="password" class="form-control" placeholder="Password">
                     </div>
                   </div>
                 </div>
                 <div *ngIf="settingsForm.get('lisApiSettings.authType').value === 'apikey'" class="form-group">
-                  <label>API Key</label>
-                  <input type="password" formControlName="apiKey" class="form-control"
+                  <label for="lisApiKey">API Key</label>
+                  <input id="lisApiKey" type="password" formControlName="apiKey" class="form-control"
                     placeholder="Enter API key">
                 </div>
               </div>
@@ -448,8 +448,8 @@
                 </div>
                 <div *ngIf="settingsForm.get('lisApiSettings.fetchInstruments.enabled').value">
                   <div class="form-group">
-                    <label>Endpoint</label>
-                    <input type="text" formControlName="endpoint" class="form-control"
+                    <label for="lisApiInstrumentsEndpoint">Endpoint</label>
+                    <input id="lisApiInstrumentsEndpoint" type="text" formControlName="endpoint" class="form-control"
                       placeholder="/api/instruments">
                   </div>
                   <div class="form-actions">
@@ -524,9 +524,9 @@
                       <h4>Connection Settings</h4>
 
                       <div class="form-group">
-                        <label>Connection Mode</label>
+                        <label [attr.for]="'instrument-' + i + '-interfaceConnectionMode'">Connection Mode</label>
                         <div class="custom-select-wrapper">
-                          <select formControlName="interfaceConnectionMode" class="form-control" required
+                          <select [id]="'instrument-' + i + '-interfaceConnectionMode'" formControlName="interfaceConnectionMode" class="form-control" required
                             (change)="onConnectionModeChange(i, $event)">
                             <option value="tcpclient">TCP Client - Connect to instrument</option>
                             <option value="tcpserver">TCP Server - Instrument connects to me</option>
@@ -535,9 +535,9 @@
                       </div>
 
                       <div class="form-group">
-                        <label>Communication Protocol</label>
+                        <label [attr.for]="'instrument-' + i + '-interfaceCommunicationProtocol'">Communication Protocol</label>
                         <div class="custom-select-wrapper">
-                          <select formControlName="interfaceCommunicationProtocol" class="form-control" required>
+                          <select [id]="'instrument-' + i + '-interfaceCommunicationProtocol'" formControlName="interfaceCommunicationProtocol" class="form-control" required>
                             <option value="astm-nonchecksum">ASTM (without checksum)</option>
                             <option value="astm-checksum">ASTM (with checksum)</option>
                             <option value="hl7">HL7</option>
@@ -547,20 +547,20 @@
 
                       <div class="form-row">
                         <div class="form-group half-width">
-                          <label>IP Address</label>
+                          <label [attr.for]="'instrument-' + i + '-analyzerMachineHost'">IP Address</label>
                           <div class="custom-select-wrapper"
                             *ngIf="instrument.get('interfaceConnectionMode')?.value === 'tcpserver'">
-                            <select formControlName="analyzerMachineHost" class="form-control" required>
+                            <select [id]="'instrument-' + i + '-analyzerMachineHost'" formControlName="analyzerMachineHost" class="form-control" required>
                               <option *ngFor="let ip of machineIps" [value]="ip">{{ ip }}</option>
                             </select>
                           </div>
-                          <input *ngIf="instrument.get('interfaceConnectionMode')?.value !== 'tcpserver'" type="text"
+                          <input *ngIf="instrument.get('interfaceConnectionMode')?.value !== 'tcpserver'" [id]="'instrument-' + i + '-analyzerMachineHost'" type="text"
                             formControlName="analyzerMachineHost" class="form-control" placeholder="192.168.1.100"
                             required>
                         </div>
                         <div class="form-group half-width">
-                          <label>Port Number</label>
-                          <input type="text" formControlName="analyzerMachinePort" class="form-control" placeholder="3120"
+                          <label [attr.for]="'instrument-' + i + '-analyzerMachinePort'">Port Number</label>
+                          <input [id]="'instrument-' + i + '-analyzerMachinePort'" type="text" formControlName="analyzerMachinePort" class="form-control" placeholder="3120"
                             required (input)="cleanPortNumber($event, i)">
                           <div class="error-message" *ngIf="instrument.get('analyzerMachinePort')?.hasError('pattern')">
                             Port must be between 1-65535
@@ -576,9 +576,9 @@
                       <h4>Instrument Details</h4>
 
                       <div class="form-group">
-                        <label>Analyzer Type</label>
+                        <label [attr.for]="'instrument-' + i + '-analyzerMachineType'">Analyzer Type</label>
                         <div class="custom-select-wrapper">
-                          <select formControlName="analyzerMachineType" class="form-control" required>
+                          <select [id]="'instrument-' + i + '-analyzerMachineType'" formControlName="analyzerMachineType" class="form-control" required>
                             <optgroup label="Roche">
                               <option value="roche-cobas-taqman">Roche Cobas Taqman</option>
                               <option value="roche-cobas-4800">Roche Cobas 4800</option>
@@ -602,8 +602,8 @@
                       </div>
 
                       <div class="form-group">
-                        <label>Instrument Name/Code</label>
-                        <input type="text" formControlName="analyzerMachineName" class="form-control"
+                        <label [attr.for]="'instrument-' + i + '-analyzerMachineName'">Instrument Name/Code</label>
+                        <input [id]="'instrument-' + i + '-analyzerMachineName'" type="text" formControlName="analyzerMachineName" class="form-control"
                           placeholder="e.g., Roche-Cobas-01" required
                           [matAutocomplete]="autoInstrumentName">
                         <mat-autocomplete #autoInstrumentName="matAutocomplete">
@@ -619,10 +619,10 @@
                       </div>
 
                       <div class="form-group">
-                        <label>Display Order</label>
+                        <label [attr.for]="'instrument-' + i + '-displayorder'">Display Order</label>
                         <div class="input-with-icon">
                           <i class="fas fa-sort-numeric-down input-icon"></i>
-                          <input type="number" formControlName="displayorder" class="form-control with-icon"
+                          <input [id]="'instrument-' + i + '-displayorder'" type="number" formControlName="displayorder" class="form-control with-icon"
                             placeholder="1">
                         </div>
                         <small class="help-text">Instruments will be sorted by this value</small>
@@ -909,13 +909,13 @@
             </div>
             <div class="card-body">
               <div class="form-group">
-                <label>Force Re-run Migrations</label>
+                <label for="forceRerunMigrations">Force Re-run Migrations</label>
                 <p class="help-text">
                   This will delete the migration history from both SQLite and MySQL and restart the application.
                   All migrations will be re-applied on next startup. Use this if you suspect the database schema is out of
                   sync.
                 </p>
-                <button type="button" class="btn btn-danger" (click)="forceRerunMigrations()">
+                <button id="forceRerunMigrations" type="button" class="btn btn-danger" (click)="forceRerunMigrations()">
                   <i class="fas fa-sync-alt"></i>
                   <span>Force Re-run All Migrations</span>
                 </button>

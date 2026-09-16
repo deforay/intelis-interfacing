@@ -16,7 +16,7 @@
       <i class="fa fa-external-link-alt"></i>
       <span>What's new</span>
     </button>
-    <button class="btn btn-sm btn-link update-dismiss" (click)="dismissUpdate()" aria-label="Dismiss">
+    <button class="btn btn-sm btn-link update-dismiss" (click)="dismissUpdate()">
       Not now
     </button>
   </div>
@@ -75,7 +75,8 @@
         </select>
         <div class="search-box">
           <i class="fa fa-search"></i>
-          <input type="text" [(ngModel)]="systemLogContext.searchText" (input)="filterInstrumentLogs(systemLogContext)"
+          <label for="systemLogSearch" class="visually-hidden">Search system logs</label>
+          <input id="systemLogSearch" type="text" [(ngModel)]="systemLogContext.searchText" (input)="filterInstrumentLogs(systemLogContext)"
             placeholder="Search system logs...">
         </div>
         <button (click)="copyLog(systemLogContext)" class="btn btn-sm btn-outline-primary" [disabled]="!systemLogCount">
@@ -198,20 +199,20 @@
           <!-- Instrument Details Grid -->
           <div class="instrument-details-grid">
             <div class="detail-item">
-              <label>Machine Type</label>
+              <span class="detail-label">Machine Type</span>
               <span>{{ instrument.connectionParams.machineType | uppercase }}</span>
             </div>
             <div class="detail-item">
-              <label>Connection Mode</label>
+              <span class="detail-label">Connection Mode</span>
               <span>{{ instrument.connectionParams.connectionMode === 'tcpclient' ? 'TCP Client' : 'TCP Server'
                 }}</span>
             </div>
             <div class="detail-item">
-              <label>Address</label>
+              <span class="detail-label">Address</span>
               <span>{{ instrument.connectionParams.host }}:{{ instrument.connectionParams.port }}</span>
             </div>
             <div class="detail-item">
-              <label>Protocol</label>
+              <span class="detail-label">Protocol</span>
               <span>{{ instrument.connectionParams.connectionProtocol | uppercase }}</span>
             </div>
           </div>
@@ -241,7 +242,8 @@
               </select>
               <div class="search-box">
                 <i class="fa fa-search"></i>
-                <input type="text" [(ngModel)]="instrument.searchText" (input)="filterInstrumentLogs(instrument)"
+                <label [attr.for]="'instrumentLogSearch-' + instrument.connectionParams.instrumentId" class="visually-hidden">Search logs</label>
+                <input [id]="'instrumentLogSearch-' + instrument.connectionParams.instrumentId" type="text" [(ngModel)]="instrument.searchText" (input)="filterInstrumentLogs(instrument)"
                   placeholder="Search logs...">
               </div>
               <button (click)="copyLog(instrument)" class="btn btn-sm btn-outline-primary">
@@ -319,7 +321,8 @@
     <!-- Search Bar -->
     <div class="search-bar">
       <i class="fa fa-search"></i>
-      <input type="text" #searchInput placeholder="Search by instrument, Sample ID, or test type..."
+      <label for="resultSearch" class="visually-hidden">Search results</label>
+      <input id="resultSearch" type="text" #searchInput placeholder="Search by instrument, Sample ID, or test type..."
         [(ngModel)]="searchTerm" class="search-input">
     </div>
 

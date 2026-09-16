@@ -651,6 +651,9 @@ export class InstrumentInterfaceService {
       completeMessage = completeMessage.replace(/[\r\n\x0B\x0C\u0085\u2028\u2029]+/gm, '\r');
 
       // A block that is not HL7 must not take the socket handler down with it.
+      // The processors throw synchronously on a parse failure, which is what
+      // this catches. They are not awaited: the promise each returns cannot
+      // reject, because saveResult reports a failed save by resolving false.
       try {
         if (instrumentConnectionData.machineType === 'abbott-alinity-m') {
           that.processHL7DataAlinity(instrumentConnectionData, completeMessage);

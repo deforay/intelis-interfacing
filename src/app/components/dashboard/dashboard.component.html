@@ -33,7 +33,7 @@
   <!-- Filter Section -->
   <div class="filter-section">
     <div class="filter-card">
-      <label class="filter-label">Select Instrument</label>
+      <label for="instrumentSelect" class="filter-label">Select Instrument</label>
       <div class="select-wrapper">
         <i class="fa fa-microscope select-icon"></i>
         <select id="instrumentSelect" [(ngModel)]="selectedInstrument" (change)="filterByInstrument()"
@@ -176,11 +176,11 @@
         </div>
         <div class="connectivity-times">
           <div class="time-stat">
-            <label>Start Time</label>
+            <span class="time-label">Start Time</span>
             <p>{{ session.startTime }}</p>
           </div>
           <div class="time-stat">
-            <label>End Time</label>
+            <span class="time-label">End Time</span>
             <p>{{ session.endTime }}</p>
           </div>
         </div>

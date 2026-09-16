@@ -77,7 +77,8 @@
   <div class="search-section">
     <div class="search-box">
       <i class="fas fa-search"></i>
-      <input #searchInput
+      <label for="rawDataSearch" class="visually-hidden">Search raw data</label>
+      <input id="rawDataSearch" #searchInput
              type="text"
              (keyup)="filterData($event)"
              placeholder="Search by machine name, date, or data content..."

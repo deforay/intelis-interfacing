@@ -10,6 +10,16 @@ export const RESULT_WEBHOOK_SCHEMA_VERSION = 1;
 export const RESULT_WEBHOOK_MAX_ITEMS = 50;
 export const RESULT_WEBHOOK_MAX_BODY_BYTES = 1024 * 1024;
 
+export interface ResultWebhookBatchLimits {
+  maxItems: number;
+  maxBodyBytes: number;
+}
+
+export const RESULT_WEBHOOK_BATCH_LIMITS: Readonly<ResultWebhookBatchLimits> = Object.freeze({
+  maxItems: RESULT_WEBHOOK_MAX_ITEMS,
+  maxBodyBytes: RESULT_WEBHOOK_MAX_BODY_BYTES
+});
+
 export type ResultWebhookAuthType = 'none' | 'bearer' | 'basic' | 'apikey';
 export type ResultWebhookHealth = 'delivering' | 'attention';
 
@@ -308,10 +318,7 @@ export function resultWebhookBytes(value: unknown): number {
  */
 export function planResultWebhookBatches(
   results: ResultWebhookResult[],
-  limits: { maxItems: number; maxBodyBytes: number } = {
-    maxItems: RESULT_WEBHOOK_MAX_ITEMS,
-    maxBodyBytes: RESULT_WEBHOOK_MAX_BODY_BYTES
-  }
+  limits: ResultWebhookBatchLimits = RESULT_WEBHOOK_BATCH_LIMITS
 ): ResultWebhookResult[][] {
   const batches: ResultWebhookResult[][] = [];
   let current: ResultWebhookResult[] = [];

@@ -620,7 +620,7 @@ $background-color: #f9fafb;
       flex: 1;
       min-width: 120px; // Minimum width for readability
 
-      label {
+      .detail-label {
         display: block;
         font-size: 0.6875rem; // Reduced from 0.75rem
         color: $text-light;
@@ -629,7 +629,7 @@ $background-color: #f9fafb;
         letter-spacing: 0.025em;
       }
 
-      span {
+      span:not(.detail-label) {
         font-size: 0.8125rem; // Reduced from 0.875rem
         font-weight: 500;
         color: $text-color;
@@ -1361,12 +1361,12 @@ $background-color: #f9fafb;
 
   .connection-card {
     .instrument-details-grid .detail-item {
-      label {
+      .detail-label {
         font-size: 0.625rem; // Even smaller labels
         margin-bottom: 0.0625rem;
       }
 
-      span {
+      span:not(.detail-label) {
         font-size: 0.75rem; // Smaller values
       }
     }
