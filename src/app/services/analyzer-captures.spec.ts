@@ -397,7 +397,7 @@ describe('Cepheid GeneXpert capture (ASTM)', () => {
 
 
 /**
- * The DRC laboratory reported empty and truncated results while running an
+ * A laboratory reported empty and truncated results while running an
  * older build: records cut across ETB frames were not rejoined, so a result
  * either lost every field after the cut or kept the frame's ETB and checksum
  * inside the value ("co\x17E4" instead of "copies/mL"). These replay the

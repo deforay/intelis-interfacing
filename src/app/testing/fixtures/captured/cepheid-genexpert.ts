@@ -1,6 +1,6 @@
 /**
  * Cepheid GeneXpert (software 5.3 and 6.2), ASTM E1394 over E1381, as
- * captured from laboratories in Zimbabwe and South Sudan. Identifiers,
+ * captured from production laboratories. Identifiers,
  * operators and dates are replaced; record layouts, value formats and the
  * framing are as transmitted.
  *
@@ -131,7 +131,7 @@ export const GENEXPERT_TESTS: GeneXpertTest[] = [
 
 /**
  * Cepheid GeneXpert software 6.5 running in French, as captured from a
- * laboratory in Haut-Katanga, DRC. The framing is identical to the captures
+ * production laboratory. The framing is identical to the captures
  * above; what differs is everything the analyzer's locale touches.
  *
  * What this capture showed:
@@ -153,7 +153,7 @@ export const GENEXPERT_FR_START_TIME = '20260901132630';
 export const GENEXPERT_FR_END_TIME = '20260901133102';
 export const GENEXPERT_FR_END_TIME_FORMATTED = '2026-09-01 13:31:02';
 const FR_CARTRIDGE = 'Cepheid-0F00000^800000^600000^1200000000^30000^20270321';
-export const GENEXPERT_FR_HEADER = 'H|@^\\|GXM-00000000002||800000_HGR EXAMPLE_HAUT KATANGA_RDC^GeneXpert^6.5|||||VLSM LIS||P|1394-97|20260901133103';
+export const GENEXPERT_FR_HEADER = 'H|@^\\|GXM-00000000002||800000_EXAMPLE LAB_EXAMPLE REGION_EXAMPLE COUNTRY^GeneXpert^6.5|||||VLSM LIS||P|1394-97|20260901133103';
 
 export interface GeneXpertFrTest {
   sampleId: string;

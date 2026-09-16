@@ -1,6 +1,6 @@
 /**
  * Roche cobas 6800/8800, HL7 v2.5 OUL^R22 over MLLP, as captured from a
- * production laboratory in Zimbabwe (20,000 messages). Identifiers, UUIDs and
+ * production laboratory (20,000 messages). Identifiers, UUIDs and
  * dates are replaced; segments, fields and flags are as transmitted.
  *
  * What the capture showed:
