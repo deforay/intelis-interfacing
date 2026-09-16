@@ -6,6 +6,8 @@ import { UtilitiesService } from './utilities.service';
 import { TcpConnectionService } from './tcp-connection.service';
 import { HL7HelperService } from './hl7-helper.service';
 import { ASTMHelperService } from './astm-helper.service';
+import { ElectronStoreService } from './electron-store.service';
+import { applyResultRules, effectiveResultRules, ResultRule } from '../../../shared/result-rules';
 import { BehaviorSubject, Observable, Subject, Subscription } from 'rxjs';
 import { COMMUNICATION_PROTOCOL, LIMS_SYNC_STATUS } from '../constants/domain.constants';
 
@@ -39,8 +41,26 @@ export class InstrumentInterfaceService {
     public tcpService: TcpConnectionService,
     public utilitiesService: UtilitiesService,
     private hl7Helper: HL7HelperService,
-    private astmHelper: ASTMHelperService
+    private astmHelper: ASTMHelperService,
+    private readonly electronStoreService?: ElectronStoreService
   ) {
+  }
+
+  /**
+   * The laboratory's result rules for an instrument, read from its settings
+   * when the result is stored, so a change applies to the next result without
+   * reconnecting, live or reprocessed.
+   */
+  private resultRulesFor(instrumentConnectionData: InstrumentConnectionStack): ResultRule[] {
+    if (instrumentConnectionData.resultRules !== undefined) {
+      return effectiveResultRules({ resultRules: instrumentConnectionData.resultRules }, instrumentConnectionData.connectionProtocol);
+    }
+    const instruments = this.electronStoreService?.get?.('instrumentsConfig');
+    const name = (instrumentConnectionData.instrumentId ?? '').trim().toLowerCase();
+    const instrument = Array.isArray(instruments)
+      ? instruments.find((candidate: any) => String(candidate?.analyzerMachineName ?? '').trim().toLowerCase() === name)
+      : undefined;
+    return effectiveResultRules(instrument, instrumentConnectionData.connectionProtocol);
   }
 
 
@@ -822,8 +842,13 @@ export class InstrumentInterfaceService {
       return Promise.resolve(false);
     }
 
+    // The value as sent is always kept beside the one stored, whether or not
+    // a rule changed it.
+    const interpreted = applyResultRules(sampleResult.results, that.resultRulesFor(instrumentConnectionData));
     const data = {
       ...sampleResult,
+      results: interpreted.value,
+      results_as_sent: sampleResult.results ?? null,
       instrument_id: instrumentConnectionData.instrumentId,
       // These fields are filtered out of the result tables and used only to
       // describe the corresponding PII-free usage event.

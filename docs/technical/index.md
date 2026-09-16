@@ -21,7 +21,9 @@ looks the way it does.
 ## The one rule worth reading first
 
 A value is stored exactly as the analyzer sent it. No rounding, no locale
-normalisation, no unit conversion, no `< 40` turned into `40`.
+normalisation, no unit conversion, no `< 40` turned into `40`. A laboratory can
+choose otherwise for its own LIS with result rules, and the value as sent is
+still kept beside the stored one.
 
 The analyzers disagree with each other about almost everything — decimal
 commas, `TND` versus `Not detected` versus `Target Not Detected`, mantissas with

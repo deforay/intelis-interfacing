@@ -26,7 +26,8 @@ The same shape in SQLite and, when configured, MySQL.
 |--------|-------|
 | `order_id`, `test_id` | The sample identifier as the analyzer sent it. Never inferred, cleaned or trimmed into shape — that would attach a result to a different patient. |
 | `test_type`, `test_unit` | Assay and unit, as sent |
-| `results` | The result, as sent |
+| `results` | The result as stored: as sent, unless one of the instrument's result rules replaced it |
+| `results_as_sent` | The result as read from the transmission, before result rules. `Failed` or `Incomplete` when the analyzer marked the run so, with its own text in `notes`. `NULL` on results stored before 4.5.0. |
 | `tested_by` | Operator recorded by the analyzer |
 | `analysed_date_time`, `specimen_date_time`, `authorised_date_time` | As reported |
 | `result_status` | `1` final, `0` not |
@@ -70,6 +71,14 @@ expanded scientific notation and applied UCUM exponents on the way in; a result
 that had been transformed could not be checked against the analyzer's own
 printout, and the transformation was not always right. The conversion belongs
 wherever the value is interpreted — the LIS — not at the point it is captured.
+
+The one exception is the laboratory's own. An instrument's
+[result rules](../guide/settings.md#result-rules) can store `Y` where the
+analyzer sent `X`, because that laboratory's LIS expects `Y`. The tool never
+decides that itself: every rule is typed by the laboratory, the replacement is
+taken literally, `results_as_sent` keeps the result as read before any rule on
+every result, and `Failed` and `Incomplete` are never replaced, so no rule can
+make a failed run read as a result.
 
 ## Sync state
 

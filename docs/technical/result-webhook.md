@@ -55,6 +55,7 @@ origin (scheme, host and port). A new origin requires the secret again, for
       "test_description": null,
       "test_location": null,
       "results": "<20",
+      "results_as_sent": "<20",
       "test_unit": "cp/mL",
       "result_status": 1,
       "notes": null,
@@ -88,7 +89,7 @@ origin (scheme, host and port). A new origin requires the secret again, for
 
 ### Result
 
-Every value is the value stored in the `orders` table, unchanged. Text fields
+Every value is the value stored in the `orders` table, unchanged. `results_as_sent` was added in 4.5.0 without changing `schemaVersion`: a receiver that ignores unknown fields is unaffected. Text fields
 are strings even when they look numeric. See
 [what is stored, and where](storage.md) for each column.
 
@@ -103,7 +104,8 @@ are strings even when they look numeric. See
 | `test_type` | string or null | Assay. |
 | `test_description` | string or null | Assay description, where the analyzer sends one. |
 | `test_location` | string or null | Location, where the analyzer sends one. |
-| `results` | string or null | The result as the analyzer sent it, for example `<20`, `Target Not Detected`, `1,25E+03`. |
+| `results` | string or null | The result as stored: what the analyzer sent, unless one of the laboratory's [result rules](../guide/settings.md#result-rules) replaced it. |
+| `results_as_sent` | string or null | The result as read from the transmission, before result rules, for example `<20`, `Target Not Detected`, `1,25E+03`. `Failed` for a run the analyzer marked as failed, whose own text is in `notes`. Null for results stored before 4.5.0. |
 | `test_unit` | string or null | Unit as sent. |
 | `result_status` | integer or null | `1` final, `0` not final. |
 | `notes` | string or null | Comment records. An errored run carries its explanation here. |

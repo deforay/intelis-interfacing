@@ -24,7 +24,7 @@ import {
 
 // Everything a result carries that came from the analyzer.
 const RESULT_FIELDS = [
-  'order_id', 'test_id', 'test_type', 'results', 'test_unit', 'result_status', 'notes', 'tested_by',
+  'order_id', 'test_id', 'test_type', 'results', 'results_as_sent', 'test_unit', 'result_status', 'notes', 'tested_by',
   'analysed_date_time', 'specimen_date_time', 'authorised_date_time', 'result_accepted_date_time',
   'machine_used', 'raw_text'
 ];
@@ -33,17 +33,19 @@ function project(results: any[]): any[] {
   return results.map(result => Object.fromEntries(RESULT_FIELDS.map(field => [field, result[field] ?? null])));
 }
 
-async function reprocess(protocol: WireProtocol, machineType: string, raw: string[]) {
+async function reprocess(protocol: WireProtocol, machineType: string, raw: string[], resultRules?: unknown) {
   // A fresh interface with its own database, so nothing received live can
   // stand in for what reprocessing produces.
-  const wire = createWireHarness({ protocol, machineType });
+  const wire = createWireHarness({ protocol, machineType, resultRules });
   const store = {
     get: vi.fn((key: string) => key === 'instrumentsConfig'
       ? [{
           analyzerMachineName: wire.connection.instrumentId,
           analyzerMachineType: machineType,
           interfaceCommunicationProtocol: protocol,
-          labName: wire.connection.labName
+          labName: wire.connection.labName,
+          // The same settings the live instrument was read with.
+          ...(resultRules !== undefined ? { resultRules } : {})
         }]
       : {})
   };
@@ -186,5 +188,56 @@ describe('reprocessing a transmission with an order that cannot be read', () => 
 
     expect(outcome).toEqual({ success: 0, failed: 1 });
     expect(wire.saved()).toHaveLength(2);
+  });
+});
+
+describe('reprocessing with result rules', () => {
+  it('applies the instrument\'s rules exactly as live processing does, and keeps the value as sent', async () => {
+    const rules = [{ match: 'contains', value: 'non détecté', replaceWith: 'Target Not Detected', ignoreCase: true }];
+    const live = createWireHarness({ protocol: 'astm-checksum', machineType: 'cepheid-genexpert', resultRules: rules });
+    for (const message of GENEXPERT_FR_TESTS.map(genexpertFrMessage)) {
+      live.receive(ENQ + genexpertFrames(message).join('') + EOT);
+    }
+    const notDetected = live.saved().filter(result => result.results_as_sent === 'NON DÉTECTÉ');
+    expect(notDetected.length).toBeGreaterThan(0);
+    expect(notDetected.every(result => result.results === 'Target Not Detected')).toBe(true);
+    expect(live.saved().filter(result => result.results_as_sent === 'DÉTECTÉ').every(result => result.results === 'DÉTECTÉ')).toBe(true);
+
+    const { saved } = await reprocess('astm-checksum', 'cepheid-genexpert', live.raw(), rules);
+
+    expect(project(saved)).toEqual(project(live.saved()));
+  });
+
+  it('uses the rules as they are when reprocessing, not as they were when the result arrived', async () => {
+    const live = createWireHarness({ protocol: 'hl7', machineType: 'roche-cobas-4800' });
+    live.receive(mllp(cobas4800Run('MSG-4800-RULES', COBAS_4800_RUN)));
+
+    const { saved } = await reprocess('hl7', 'roche-cobas-4800', live.raw(), [
+      { match: 'exact', value: 'Invalid', replaceWith: 'Failed' }
+    ]);
+
+    const invalid = saved.find(result => result.results_as_sent === 'Invalid');
+    expect(invalid?.results).toBe('Failed');
+    expect(live.saved().find(result => result.results_as_sent === 'Invalid')?.results).toBe('Invalid');
+  });
+});
+
+describe('reprocessing after the instrument\'s settings changed', () => {
+  it('reads the settings as they are now, so a renamed instrument keeps its own rules', async () => {
+    const live = createWireHarness({ protocol: 'hl7', machineType: 'roche-cobas-4800' });
+    live.receive(mllp(cobas4800Run('MSG-4800-RENAME', [{ sampleId: 'VL990001', value: '> Titer max' }])));
+    expect(live.saved()[0].results).toBe('> 10000000');
+
+    const wire = createWireHarness({ protocol: 'hl7', machineType: 'roche-cobas-4800' });
+    let instruments: any[] = [{ analyzerMachineName: 'OLD-NAME', analyzerMachineType: 'roche-cobas-4800', interfaceCommunicationProtocol: 'hl7' }];
+    const store = { get: vi.fn((key: string) => key === 'instrumentsConfig' ? instruments : {}) };
+    const processor = new RawDataProcessorService(wire.utilities, store as any, wire.service);
+
+    // Renamed, and its rules removed, after the processor was created.
+    instruments = [{ analyzerMachineName: 'NEW-NAME', analyzerMachineType: 'roche-cobas-4800', interfaceCommunicationProtocol: 'hl7', resultRules: [] }];
+    const outcome = await processor.reprocessRawData([{ id: 1, instrument_id: 'NEW-NAME', data: live.raw()[0] }]);
+
+    expect(outcome).toEqual({ success: 1, failed: 0 });
+    expect(wire.saved().map(result => [result.results, result.results_as_sent])).toEqual([['> Titer max', '> Titer max']]);
   });
 });

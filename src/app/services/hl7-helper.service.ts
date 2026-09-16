@@ -245,13 +245,10 @@ export class HL7HelperService {
         test_unit: testUnit,
         notes: ''
       };
-    } else if (resultOutcome === '<20' || resultOutcome === '< 20') {
-      const testUnit = this.utilitiesService.decodeHtmlEntities(this.extractHL7Unit(singleObx));
-      return { results: '< 20', test_unit: testUnit, notes: '' };
-    } else if (resultOutcome === 'Target Not Detected') {
-      return { results: 'Target Not Detected', test_unit: '', notes: '' };
-    } else if (resultOutcome === '> Titer max') {
-      return { results: '> 10000000', test_unit: '', notes: '' };
+    } else if (resultOutcome === 'Target Not Detected' || resultOutcome === '> Titer max') {
+      // Stored as sent. Rewriting either, for instance "> Titer max" to
+      // "> 10000000", is a laboratory's result rule, not the parser's.
+      return { results: resultOutcome, test_unit: '', notes: '' };
     } else if (
       resultOutcome === 'Target Not Detected' ||
       resultOutcome === 'Failed' ||

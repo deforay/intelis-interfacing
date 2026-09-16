@@ -16,7 +16,10 @@ A silent wrong answer is worse than a loud failure. Rank findings that way.
    analyzers speak different dialects — decimal commas, French result words,
    `TND`, `Not detected`, `Target Not Detected` — and every one of them is
    the laboratory's to interpret, not ours. A change that rewrites a value on
-   the way in is a defect even when the new value looks tidier.
+   the way in is a defect even when the new value looks tidier. The only
+   rewrite allowed is a laboratory's own result rule, configured per
+   instrument, and even then `results_as_sent` must hold the result as read
+   before any rule, and no rule may replace `Failed` or `Incomplete`.
 2. **The raw transmission is kept verbatim.** `raw_data` is what makes a bad
    parse recoverable: reprocessing re-derives results from it. Anything that
    normalises, truncates or drops the stored bytes destroys the only copy.

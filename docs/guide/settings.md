@@ -74,6 +74,47 @@ Each instrument needs a unique name and a unique address-and-port combination.
     "Other" for a model that is in the list will store results, but some fields
     may come through empty.
 
+### Result rules
+
+Result rules tell the tool to store a different value when an instrument sends
+a particular result. Use them when your LIS expects a result written in a way
+the instrument does not send it. Each instrument has its own rules.
+
+| Field | What it is |
+|-------|------------|
+| **Is exactly / Contains** | Whether the whole result must match, or only part of it. Spaces around the result are ignored. |
+| **Result** | The text the instrument sends, e.g. `> Titer max`. |
+| **Store instead** | The value to store. It replaces the whole result, exactly as typed. |
+| **Ignore case** | Match `NOT DETECTED` and `Not Detected` alike. |
+
+The first rule that matches is used. A result that no rule matches is stored
+exactly as the instrument sent it. `Failed` and `Incomplete` are never
+replaced, so no rule can make a failed run look like a result.
+
+- A rule with either text left empty is ignored.
+- **Contains** also matches inside numbers: a rule for `20` matches `1200`.
+- Rules stay with the instrument if you change its protocol. Review them when
+  you do.
+
+- **Duplicate** copies one rule, to change it slightly.
+- **Copy rules** adds another instrument's rules to this one, skipping any it
+  already has.
+
+The result as read before any rule is always kept beside the stored one, and
+the raw data never changes. After changing a rule, reprocess older raw data to store
+earlier results the new way. Reprocessing adds new results rather than
+replacing the old ones.
+
+!!! note "Rules you may already have"
+
+    Earlier versions always stored `> Titer max` as `> 10000000` and `<20` as
+    `< 20` for HL7 instruments. Those are now the starting rules of every HL7
+    instrument configured before this version, so nothing changes until you
+    edit or remove them. A new instrument starts with no rules.
+
+Check with your LIS administrator before adding a rule. The LIS reads the value
+you store, not the one the instrument sent.
+
 ## LIS API *(optional)*
 
 If your LIS offers an API, the tool can fetch the instrument names it expects,

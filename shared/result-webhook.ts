@@ -112,6 +112,8 @@ export interface ResultWebhookResult {
   test_description: string | null;
   test_location: string | null;
   results: string | null;
+  /** The result as read from the transmission, before the laboratory's result rules. Null on results stored before 4.5.0. */
+  results_as_sent: string | null;
   test_unit: string | null;
   result_status: number | null;
   notes: string | null;
@@ -153,6 +155,7 @@ export const RESULT_WEBHOOK_RESULT_FIELDS: readonly (keyof ResultWebhookResult)[
   'test_description',
   'test_location',
   'results',
+  'results_as_sent',
   'test_unit',
   'result_status',
   'notes',

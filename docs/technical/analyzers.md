@@ -114,8 +114,9 @@ All three send OUL^R22 over MLLP and disagree about where things are.
 - **4800 flags**: `NTE` 1 carries the run flags (`F;X2,X3`, `F;R3223,X2`). They
   are what explains a `Failed` or `Invalid` result, and they are not kept in
   the notes today.
-- **4800 `> Titer max`** is stored as `> 10000000`. Older versions of this tool
-  wrote `>10000000`. Both are a number the analyzer did not send.
+- **4800 `> Titer max`** was always rewritten to `> 10000000` in code (and
+  `>10000000` by older versions). It is now a result rule: HL7 instruments
+  configured before 4.5.0 start with it, new ones store `> Titer max` as sent.
 - A 4800 control can fail before it is identified: `SPM.2` is `&ROCHE` and
   `SAC.3` is empty. Its sample ID is stored empty.
 - Instrument errors and flags arrive as text and are stored as `Failed` with the

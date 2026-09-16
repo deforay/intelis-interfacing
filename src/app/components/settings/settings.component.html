@@ -628,6 +628,79 @@
                         <small class="help-text">Instruments will be sorted by this value</small>
                       </div>
                     </div>
+
+                    <div class="form-section result-rules-section">
+                      <h4>Result rules</h4>
+                      <p class="help-text">
+                        If this instrument sends a result below, store the replacement instead. The first rule that
+                        matches is used. "Failed" and "Incomplete" are never replaced. The result before rules is
+                        always kept alongside, and the raw data is never changed. A "contains" rule also matches inside
+                        numbers: "20" matches "1200".
+                      </p>
+
+                      <p class="help-text" *ngIf="!resultRulesOf(i).length">
+                        No rules: every result is stored exactly as the instrument sends it.
+                      </p>
+
+                      <div class="result-rule" *ngFor="let rule of resultRulesOf(i); let r = index; trackBy: trackByIndex"
+                        [class.incomplete]="!rule.value?.trim() || !rule.replaceWith?.trim()">
+                        <div class="custom-select-wrapper result-rule-match">
+                          <select class="form-control" [id]="'instrument-' + i + '-rule-' + r + '-match'"
+                            aria-label="How to match" [value]="rule.match"
+                            (change)="updateResultRule(i, r, 'match', $any($event.target).value)">
+                            <option value="exact">Is exactly</option>
+                            <option value="contains">Contains</option>
+                          </select>
+                        </div>
+                        <input type="text" class="form-control" [id]="'instrument-' + i + '-rule-' + r + '-value'"
+                          aria-label="Result sent by the instrument" placeholder="e.g. > Titer max" [value]="rule.value"
+                          (input)="updateResultRule(i, r, 'value', $any($event.target).value)">
+                        <span class="result-rule-arrow" aria-hidden="true"><i class="fas fa-arrow-right"></i></span>
+                        <input type="text" class="form-control" [id]="'instrument-' + i + '-rule-' + r + '-replace'"
+                          aria-label="Store instead" placeholder="e.g. > 10000000" [value]="rule.replaceWith"
+                          (input)="updateResultRule(i, r, 'replaceWith', $any($event.target).value)">
+                        <label class="checkbox-label result-rule-case" [attr.for]="'instrument-' + i + '-rule-' + r + '-case'">
+                          <input type="checkbox" [id]="'instrument-' + i + '-rule-' + r + '-case'" [checked]="rule.ignoreCase === true"
+                            (change)="updateResultRule(i, r, 'ignoreCase', $any($event.target).checked)">
+                          <span>Ignore case</span>
+                        </label>
+                        <small class="result-rule-hint" *ngIf="!rule.value?.trim() || !rule.replaceWith?.trim()">
+                          Incomplete: this rule is ignored until both texts are filled in.
+                        </small>
+                        <div class="result-rule-actions">
+                          <button type="button" class="btn btn-sm btn-outline-secondary" title="Duplicate rule"
+                            aria-label="Duplicate rule" (click)="duplicateResultRule(i, r)">
+                            <i class="fas fa-copy"></i>
+                          </button>
+                          <button type="button" class="btn btn-sm btn-outline-danger" title="Remove rule"
+                            aria-label="Remove rule" (click)="removeResultRule(i, r)">
+                            <i class="fas fa-times"></i>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div class="result-rules-footer">
+                        <button type="button" class="btn btn-sm btn-outline-primary" (click)="addResultRule(i)">
+                          <i class="fas fa-plus"></i>
+                          <span>Add rule</span>
+                        </button>
+                        <ng-container *ngIf="ruleSourcesFor(i).length">
+                          <div class="custom-select-wrapper result-rules-copy">
+                            <select class="form-control" [id]="'instrument-' + i + '-rules-copy'"
+                              aria-label="Copy rules from another instrument" #copySource>
+                              <option *ngFor="let source of ruleSourcesFor(i)" [value]="source.index">
+                                {{ source.name }} ({{ source.count }} {{ source.count === 1 ? 'rule' : 'rules' }})
+                              </option>
+                            </select>
+                          </div>
+                          <button type="button" class="btn btn-sm btn-outline-secondary"
+                            (click)="copyResultRules(+copySource.value, i)">
+                            <i class="fas fa-clone"></i>
+                            <span>Copy rules</span>
+                          </button>
+                        </ng-container>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

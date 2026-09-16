@@ -13,6 +13,8 @@ import { LisApiService } from '../../services/lis-api.service';
 import { LisApiConfig } from '../../interfaces/lis-api-config.interface';
 import { IntelisConnectionService } from '../../services/intelis-connection.service';
 import { ResultWebhookService } from '../../services/result-webhook.service';
+import { normalizeResultRules, ResultRule } from '../../../../shared/result-rules';
+import { instrumentForSave, savedInstrumentFormGroup } from './instrument-form';
 import { ResultWebhookSyncService } from '../../services/result-webhook-sync.service';
 import {
   isPlainHttpToAnotherHost,
@@ -200,7 +202,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
         displayName: ['']
       }),
       instrumentsSettings: this.formBuilder.array(
-        instrumentSettingsStore.map(instrument => this.formBuilder.group(instrument))
+        instrumentSettingsStore.map(instrument => savedInstrumentFormGroup(this.formBuilder, instrument))
       )
     }, { validators: [this.uniqueInstrumentNameValidator(), this.uniqueIpPortValidator()] });
 
@@ -591,6 +593,66 @@ export class SettingsComponent implements OnInit, OnDestroy {
     return this.settingsForm.get('instrumentsSettings') as FormArray;
   }
 
+  trackByIndex(index: number): number {
+    return index;
+  }
+
+  resultRulesOf(instrumentIndex: number): ResultRule[] {
+    return this.instrumentsSettings.at(instrumentIndex)?.get('resultRules')?.value ?? [];
+  }
+
+  private setResultRules(instrumentIndex: number, rules: ResultRule[]): void {
+    const control = this.instrumentsSettings.at(instrumentIndex)?.get('resultRules');
+    if (!control) return;
+    control.setValue(rules);
+    control.markAsDirty();
+  }
+
+  addResultRule(instrumentIndex: number): void {
+    this.setResultRules(instrumentIndex, [
+      ...this.resultRulesOf(instrumentIndex),
+      { match: 'exact', value: '', replaceWith: '' }
+    ]);
+  }
+
+  updateResultRule(instrumentIndex: number, ruleIndex: number, field: keyof ResultRule, value: string | boolean): void {
+    this.setResultRules(instrumentIndex, this.resultRulesOf(instrumentIndex).map((rule, index) =>
+      index === ruleIndex ? { ...rule, [field]: value } : rule
+    ));
+  }
+
+  duplicateResultRule(instrumentIndex: number, ruleIndex: number): void {
+    const rules = [...this.resultRulesOf(instrumentIndex)];
+    rules.splice(ruleIndex + 1, 0, { ...rules[ruleIndex] });
+    this.setResultRules(instrumentIndex, rules);
+  }
+
+  removeResultRule(instrumentIndex: number, ruleIndex: number): void {
+    this.setResultRules(instrumentIndex, this.resultRulesOf(instrumentIndex).filter((_, index) => index !== ruleIndex));
+  }
+
+  /** Other instruments that have rules to copy. */
+  ruleSourcesFor(instrumentIndex: number): { index: number; name: string; count: number }[] {
+    return this.instrumentsSettings.controls
+      .map((control, index) => ({
+        index,
+        name: control.get('analyzerMachineName')?.value || `Instrument ${index + 1}`,
+        count: normalizeResultRules(control.get('resultRules')?.value).length
+      }))
+      .filter(source => source.index !== instrumentIndex && source.count > 0);
+  }
+
+  /** Appends another instrument's rules, skipping any this instrument already has. */
+  copyResultRules(fromIndex: number, toIndex: number): void {
+    const existing = this.resultRulesOf(toIndex);
+    const key = (rule: ResultRule) => JSON.stringify([rule.match, rule.value, rule.replaceWith, rule.ignoreCase === true]);
+    const seen = new Set(existing.map(key));
+    const copies = normalizeResultRules(this.resultRulesOf(fromIndex))
+      .filter(rule => !seen.has(key(rule)))
+      .map(rule => ({ ...rule }));
+    this.setResultRules(toIndex, [...existing, ...copies]);
+  }
+
 
 
   public async forceRerunMigrations(): Promise<void> {
@@ -752,7 +814,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
         }
       ]],
       interfaceConnectionMode: ['', Validators.required],
-      displayorder: ['']
+      displayorder: [''],
+      resultRules: [[]]
     });
 
     this.instrumentsSettings.push(newInstrument);
@@ -806,16 +869,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
       // Ensure all required keys exist in each instrument setting
       updatedSettings.instrumentsSettings = updatedSettings.instrumentsSettings.map(instrument => {
-        const defaultInstrument = {
-          analyzerMachineType: '',
-          interfaceCommunicationProtocol: '',
-          analyzerMachineName: '',
-          analyzerMachineHost: '',
-          analyzerMachinePort: '',
-          interfaceConnectionMode: '',
-          displayorder: ''
-        };
-        return { ...defaultInstrument, ...instrument };
+        return instrumentForSave(instrument);
       });
 
       // Show save in progress notification

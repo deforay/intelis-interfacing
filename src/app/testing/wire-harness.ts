@@ -34,6 +34,11 @@ export interface WireHarnessOptions {
   labName?: string;
   host?: string;
   port?: number;
+  /**
+   * The instrument's saved result rules. Omitted, the instrument has no
+   * saved rules and is read with the defaults for its protocol.
+   */
+  resultRules?: unknown;
 }
 
 export interface WireHarness {
@@ -199,12 +204,18 @@ export function createWireHarness(options: WireHarnessOptions): WireHarness {
   const utilities = new UtilitiesService(null, null, { log: vi.fn() } as any);
   const astmHelper = new ASTMHelperService(utilities);
   const hl7Helper = new HL7HelperService(utilities);
+  const store = {
+    get: (key: string) => key === 'instrumentsConfig' && options.resultRules !== undefined
+      ? [{ analyzerMachineName: instrumentId, interfaceCommunicationProtocol: options.protocol, resultRules: options.resultRules }]
+      : undefined
+  };
   const service = new InstrumentInterfaceService(
     dbService as any,
     tcpService as any,
     utilities,
     hl7Helper,
-    astmHelper
+    astmHelper,
+    store as any
   );
 
   const socket = { writable: true, write: vi.fn() };

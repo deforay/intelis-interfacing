@@ -115,6 +115,7 @@ export class DatabaseService {
     'created_date',
     'test_unit',
     'results',
+    'results_as_sent',
     'tested_by',
     'analysed_date_time',
     'specimen_date_time',
@@ -553,6 +554,7 @@ export class DatabaseService {
     await this.ensureMysqlColumn('raw_data', 'instrument_id', 'ALTER TABLE `raw_data` ADD COLUMN `instrument_id` VARCHAR(128) NULL');
     await this.ensureMysqlColumn('orders', 'instrument_id', 'ALTER TABLE `orders` ADD COLUMN `instrument_id` VARCHAR(128) NULL');
     await this.ensureMysqlColumn('orders', 'notes', 'ALTER TABLE `orders` ADD COLUMN `notes` TEXT NULL');
+    await this.ensureMysqlColumn('orders', 'results_as_sent', 'ALTER TABLE `orders` ADD COLUMN `results_as_sent` VARCHAR(255) NULL AFTER `results`');
     await this.ensureMysqlColumn('orders', 'ingestion_id', 'ALTER TABLE `orders` ADD COLUMN `ingestion_id` VARCHAR(36) NULL');
     await this.ensureMysqlIndex('orders', 'idx_orders_ingestion_id', 'CREATE UNIQUE INDEX `idx_orders_ingestion_id` ON `orders` (`ingestion_id`)');
   }

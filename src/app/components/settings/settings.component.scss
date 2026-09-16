@@ -1204,6 +1204,62 @@ select.form-control {
   animation: fadeIn 0.3s ease;
 }
 
+.instrument-card .instrument-body .result-rules-section {
+  grid-column: 1 / -1;
+
+  .result-rule {
+    display: grid;
+    grid-template-columns: 9rem minmax(0, 1fr) auto minmax(0, 1fr) auto auto;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.5rem;
+
+    @media (max-width: 768px) {
+      grid-template-columns: 1fr;
+
+      .result-rule-arrow {
+        display: none;
+      }
+    }
+  }
+
+  .result-rule-arrow {
+    color: $text-light;
+  }
+
+  .result-rule.incomplete .form-control {
+    border-color: $warning-color;
+  }
+
+  .result-rule-hint {
+    grid-column: 1 / -1;
+    color: $text-light;
+    font-size: 0.75rem;
+  }
+
+  .result-rule-case {
+    white-space: nowrap;
+    font-size: 0.8125rem;
+  }
+
+  .result-rule-actions {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  .result-rules-footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    margin-top: 0.75rem;
+  }
+
+  .result-rules-copy {
+    min-width: 14rem;
+  }
+}
+
 // Validation states
 .form-control {
   &.ng-invalid.ng-touched {

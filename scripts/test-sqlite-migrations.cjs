@@ -87,6 +87,7 @@ function testFreshInstallation(migrations, temporaryDirectory) {
     assert(orderIndexes.some(index => index.name === 'idx_orders_mysql_status_pending'));
     assert(orderColumns.some(column => column.name === 'result_webhook_status' && column.notnull === 1 && column.dflt_value === '0'));
     assert(orderIndexes.some(index => index.name === 'idx_orders_result_webhook_pending'));
+    assert(orderColumns.some(column => column.name === 'results_as_sent' && column.notnull === 0));
     assert(rawDataColumns.some(column => column.name === 'instrument_id'));
     assert(rawDataColumns.some(column => column.name === 'mysql_inserted'));
     assert(appLogColumns.some(column => column.name === 'log_type'));

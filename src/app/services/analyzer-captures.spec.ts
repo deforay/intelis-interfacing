@@ -323,7 +323,7 @@ describe('Roche cobas 4800 capture (HL7)', () => {
       ['VL230103', '0BHIV1', 'Failed', '', 1, ''],
       ['VL230104', '0BHIV1', 'Failed', '', 1, ''],
       ['VL230105', '0BHIV1', 'Invalid', '', 1, ''],
-      // Open: rewritten from "> Titer max", a value the analyzer did not send.
+      // The legacy result rule an HL7 instrument without saved rules is read with.
       ['VL230106', '0BHIV1', '> 10000000', '', 1, ''],
       ['EID230107', '0BHIV1QUAL', 'Not Detected', '', 1, ''],
       ['EID230108', '0BHIV1QUAL', 'Detected', '', 1, ''],
@@ -332,6 +332,19 @@ describe('Roche cobas 4800 capture (HL7)', () => {
       ['', '0BHIV1', 'Failed', '', 1, '']
     ]);
     expect(wire.failures()).toEqual([]);
+    expect(wire.saved().find(result => result.order_id === 'VL230106')?.results_as_sent).toBe('> Titer max');
+  });
+
+  it('stores "> Titer max" as sent when the instrument has no result rules', () => {
+    const wire = createWireHarness({ protocol: 'hl7', machineType: 'roche-cobas-4800', resultRules: [] });
+
+    wire.receive(mllp(cobas4800Run('MSG-4800-NORULES', COBAS_4800_THIRD_LAB_RUN)));
+
+    const aboveRange = wire.saved().find(result => result.order_id === 'VL230106');
+    expect(aboveRange).toMatchObject({ results: '> Titer max', results_as_sent: '> Titer max', test_unit: '' });
+    for (const result of wire.saved()) {
+      expect(result.results, result.order_id).toBe(result.results_as_sent);
+    }
   });
 
   it('acknowledges a work-order query without storing anything', () => {

@@ -4,6 +4,7 @@ import { ElectronStoreService } from './electron-store.service';
 import { UtilitiesService } from './utilities.service';
 import { InstrumentInterfaceService } from './instrument-interface.service';
 import { InstrumentConnectionStack } from '../interfaces/instrument-connections.interface';
+import { effectiveResultRules } from '../../../shared/result-rules';
 
 @Injectable({
   providedIn: 'root'
@@ -55,6 +56,10 @@ export class RawDataProcessorService {
     let successCount = 0;
     let failedCount = 0;
     const errors = [];
+
+    // Settings can change while the application runs (an instrument renamed,
+    // its rules edited): reprocess with them as they are now.
+    this.instrumentsSettings = this.electronStoreService.get('instrumentsConfig');
 
     for (let i = 0; i < rawDataEntries.length; i++) {
       const entry = rawDataEntries[i];
@@ -159,6 +164,7 @@ export class RawDataProcessorService {
         machineType: machineType,
         connectionProtocol: protocol,
         labName: instrumentSettings.labName || 'Default Lab',
+        resultRules: effectiveResultRules(instrumentSettings, protocol),
         transmissionStatusSubject: new BehaviorSubject<boolean>(false),
         statusSubject: new BehaviorSubject<boolean>(true),
         connectionAttemptStatusSubject: new BehaviorSubject<boolean>(true),
