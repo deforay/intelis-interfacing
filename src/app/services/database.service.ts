@@ -13,6 +13,12 @@ import {
   IntelisUsageSummary,
   IntelisUsageSummaryAcknowledgement
 } from '../../../shared/intelis-connection';
+import {
+  RESULT_WEBHOOK_RESULT_FIELDS,
+  RESULT_WEBHOOK_STATUS,
+  ResultWebhookResult,
+  toResultWebhookResult
+} from '../../../shared/result-webhook';
 
 export interface ApplicationLogStoreCleanupPreview {
   available: boolean;
@@ -1342,6 +1348,47 @@ export class DatabaseService {
         [...statusValues, ...ids]
       );
     }
+  }
+
+  public async fetchPendingResultWebhookResults(maxItems: number): Promise<{
+    results: ResultWebhookResult[];
+    hasMore: boolean;
+  }> {
+    const columns = RESULT_WEBHOOK_RESULT_FIELDS.map(field => `\`${field}\``).join(', ');
+    const records = await this.execSqlite(
+      `SELECT ${columns}
+       FROM orders
+       WHERE result_webhook_status = ?
+       ORDER BY id
+       LIMIT ?`,
+      [RESULT_WEBHOOK_STATUS.PENDING, maxItems + 1]
+    );
+    const hasMore = records.length > maxItems;
+    // The ingestion ID is the receiver's duplicate key, so a row never leaves
+    // without one.
+    const selected = await this.ensureOrderIngestionIds(records.slice(0, maxItems));
+    return { results: selected.map(record => toResultWebhookResult(record)), hasMore };
+  }
+
+  /** Only rows still pending move: a delivery never overwrites another state. */
+  public async markResultWebhookDelivered(ids: number[]): Promise<void> {
+    for (const batch of this.chunkArray(ids, 200)) {
+      const placeholders = batch.map(() => '?').join(',');
+      await this.execSqlite(
+        `UPDATE orders
+         SET result_webhook_status = ?
+         WHERE result_webhook_status = ? AND id IN (${placeholders})`,
+        [RESULT_WEBHOOK_STATUS.DELIVERED, RESULT_WEBHOOK_STATUS.PENDING, ...batch]
+      );
+    }
+  }
+
+  public async countPendingResultWebhookResults(): Promise<number> {
+    const [row] = await this.execSqlite(
+      'SELECT COUNT(*) AS pending FROM orders WHERE result_webhook_status = ?',
+      [RESULT_WEBHOOK_STATUS.PENDING]
+    );
+    return Number(row?.pending ?? 0);
   }
 
   public async fetchPendingIntelisActivity(maxItems: number): Promise<IntelisActivityEvent[]> {

@@ -11,6 +11,8 @@ looks the way it does.
   taken from captures of live laboratories rather than documentation.
 - **[What is stored, and where](storage.md)** — the tables, the migrations, and
   the rule that governs every value in them.
+- **[Result webhook](result-webhook.md)** — the JSON request an HTTP receiver
+  gets for each batch of results, and when a result counts as delivered.
 - **[Usage statistics](telemetry.md)** — what is recorded locally and what
   leaves the machine.
 - **[Building and releasing](building.md)** — the gate, the release, and the

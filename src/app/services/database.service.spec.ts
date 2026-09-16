@@ -288,6 +288,48 @@ describe('DatabaseService result durability', () => {
   });
 });
 
+describe('DatabaseService result webhook queue', () => {
+  const createService = () => Object.create(DatabaseService.prototype) as any;
+
+  it('reads pending rows as the published contract, with an ingestion ID on each', async () => {
+    const service = createService();
+    service.execSqlite = vi.fn(async (query: string) => {
+      if (query.includes('WHERE result_webhook_status')) {
+        return [
+          { id: 3, ingestion_id: null, order_id: 'SAMPLE-003', results: '<40', result_status: 1, lims_sync_status: 0 },
+          { id: 4, ingestion_id: 'ingest-4', order_id: 'SAMPLE-004', results: 'Invalid', result_status: 1 }
+        ];
+      }
+      if (query.startsWith('UPDATE orders SET ingestion_id')) return { changes: 1 };
+      return [{ ingestion_id: 'generated-3' }];
+    });
+
+    const page = await service.fetchPendingResultWebhookResults(1);
+
+    const [query, values] = service.execSqlite.mock.calls[0];
+    expect(query).toContain('WHERE result_webhook_status = ?');
+    expect(query).not.toContain('lims_sync_status');
+    expect(values).toEqual([0, 2]);
+    expect(page.hasMore).toBe(true);
+    expect(page.results).toHaveLength(1);
+    expect(page.results[0]).toMatchObject({ id: 3, ingestion_id: 'generated-3', results: '<40' });
+    expect(page.results[0]).not.toHaveProperty('lims_sync_status');
+  });
+
+  it('moves only still-pending rows to delivered', async () => {
+    const service = createService();
+    service.execSqlite = vi.fn().mockResolvedValue({ changes: 2 });
+
+    await service.markResultWebhookDelivered([7, 8]);
+
+    const [query, values] = service.execSqlite.mock.calls[0];
+    expect(query).toContain('SET result_webhook_status = ?');
+    expect(query).toContain('WHERE result_webhook_status = ? AND id IN (?,?)');
+    expect(query).not.toContain('lims_sync_status');
+    expect(values).toEqual([1, 0, 7, 8]);
+  });
+});
+
 describe('DatabaseService telemetry durability', () => {
   const createService = () => {
     const service = Object.create(DatabaseService.prototype) as any;

@@ -21,6 +21,8 @@ protocols, the storage, and the rules a change is held to.
 3. Each result is stored exactly as the analyzer reported it, alongside the raw
    transmission it came from.
 4. The LIS reads results from MySQL, or the tool pushes them to an API.
+   Optionally, every result is also forwarded as JSON to any HTTP receiver,
+   such as an integration engine.
 
 Supported: Roche cobas Taqman, 4800, 5800 and 6800/8800; Abbott m2000 and
 Alinity m; Cepheid GeneXpert; and generic ASTM and HL7 for anything else that

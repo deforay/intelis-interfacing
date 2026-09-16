@@ -85,6 +85,8 @@ function testFreshInstallation(migrations, temporaryDirectory) {
     const orderIndexes = all(database, 'PRAGMA index_list(orders)');
     assert(orderIndexes.some(index => index.name === 'idx_orders_ingestion_id' && index.unique === 1));
     assert(orderIndexes.some(index => index.name === 'idx_orders_mysql_status_pending'));
+    assert(orderColumns.some(column => column.name === 'result_webhook_status' && column.notnull === 1 && column.dflt_value === '0'));
+    assert(orderIndexes.some(index => index.name === 'idx_orders_result_webhook_pending'));
     assert(rawDataColumns.some(column => column.name === 'instrument_id'));
     assert(rawDataColumns.some(column => column.name === 'mysql_inserted'));
     assert(appLogColumns.some(column => column.name === 'log_type'));
@@ -141,7 +143,7 @@ function testLegacyUpgrade(migrations, temporaryDirectory) {
 
     applyMigrations(database, migrations.slice(1));
 
-    const orders = all(database, "SELECT order_id, mysql_inserted, mysql_status_synced, notes, ingestion_id FROM orders WHERE order_id = 'LEGACY-001'");
+    const orders = all(database, "SELECT order_id, mysql_inserted, mysql_status_synced, notes, ingestion_id, result_webhook_status FROM orders WHERE order_id = 'LEGACY-001'");
     const rawData = all(database, "SELECT machine, instrument_id, mysql_inserted FROM raw_data WHERE machine = 'ANALYZER-OLD'");
     const appLogs = all(database, "SELECT log, category FROM app_log WHERE log = 'legacy log'");
     assert.equal(orders.length, 1);
@@ -150,6 +152,9 @@ function testLegacyUpgrade(migrations, temporaryDirectory) {
     assert.equal(orders[0].mysql_status_synced, 1);
     assert.equal(orders[0].notes, null);
     assert.match(orders[0].ingestion_id, /^[a-f0-9]{32}$/);
+    // Pending, but only sent if forwarding is turned on; first activation marks
+    // everything already stored as not queued.
+    assert.equal(orders[0].result_webhook_status, 0);
     assert.deepEqual(rawData, [{ machine: 'ANALYZER-OLD', instrument_id: 'ANALYZER-OLD', mysql_inserted: 0 }]);
     assert.deepEqual(appLogs, [{ log: 'legacy log', category: 'operational' }]);
     const telemetryTables = all(database, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'telemetry_events'");
@@ -164,7 +169,11 @@ function testLegacyUpgrade(migrations, temporaryDirectory) {
 function testDailyUsageBackfill(migrations, temporaryDirectory) {
   const database = new DatabaseSync(path.join(temporaryDirectory, 'usage-backfill.db'));
   try {
-    applyMigrations(database, migrations.slice(0, -1));
+    // Named rather than positional: later migrations must not move the point
+    // this backfill is exercised at.
+    const backfillIndex = migrations.findIndex(migration => migration.file === '010.sql');
+    assert(backfillIndex > 0, 'Expected the usage statistics backfill migration');
+    applyMigrations(database, migrations.slice(0, backfillIndex));
     database.exec(`
       INSERT INTO telemetry_events (
         event_id, event_type, event_category, occurred_at, instrument_id,
@@ -175,7 +184,7 @@ function testDailyUsageBackfill(migrations, temporaryDirectory) {
         ('backfill-3', 'test.processing_failed', 'failure', '2026-07-20 11:00:00', 'ANALYZER-2', 'cobas', 'HIVVL', 'failed', 1)
     `);
 
-    applyMigrations(database, migrations.slice(-1));
+    applyMigrations(database, migrations.slice(backfillIndex));
 
     const summaries = all(database, `
       SELECT total_tests, successful_tests, failed_tests, source_installation_id

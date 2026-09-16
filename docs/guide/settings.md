@@ -88,6 +88,41 @@ so the names on both sides match.
 **Fetch Instruments** tests the connection and retrieves the names. You can
 always type them by hand instead.
 
+## Result forwarding *(optional)*
+
+Result forwarding sends every new result to one more system over HTTP, for
+example an integration engine such as Open Integration Engine or Mirth Connect.
+It does not change MySQL or InteLIS delivery. This section has its own
+**Save forwarding** button. **Save Settings** does not save it.
+
+| Field | What it is |
+|-------|------------|
+| **Forward results to this receiver** | Turns forwarding on or off. |
+| **Receiver URL** | The address results are sent to, e.g. `http://localhost:8081/results`. |
+| **Authentication** | `None`, `Bearer token`, `Basic (username and password)`, or `API key (X-API-Key header)`. |
+| **Username** | For Basic authentication only. |
+| **Bearer token**, **Password** or **API key** | The secret for the chosen authentication. After saving, leave it blank to keep the saved secret. |
+
+**Send test** sends an empty test request with the values in the form. It sends
+no results.
+
+The first time you save this section, results already stored on this computer
+are marked as not to be sent. This happens whether forwarding is on or off.
+Results received after that first save are sent while forwarding is on. While
+it is off, they are kept and sent once you turn it on. A result stays queued
+until the receiver accepts it. **Waiting to send** shows how many are queued.
+
+If you change the receiver URL to a different server, enter the secret again.
+A saved secret is only ever sent to the server it was saved for.
+
+A URL that uses plain `http://` to another computer shows a warning. Results and
+credentials cross the network unencrypted on that URL.
+
+Settings exports and backups do not include result forwarding. After restoring
+on another computer, set it up again. The
+[result webhook reference](../technical/result-webhook.md) describes the
+request a receiver gets.
+
 ## Connecting to InteLIS
 
 If your laboratory uses InteLIS, the **Connection Code** from your facility page

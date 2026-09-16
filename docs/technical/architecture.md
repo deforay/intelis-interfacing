@@ -4,7 +4,7 @@ An Electron application: a Node main process that owns the sockets and the
 databases, and an Angular renderer that draws the console.
 
 ```
-analyzer ──TCP──► main process ──► parsers ──► SQLite ──► MySQL / LIS API
+analyzer ──TCP──► main process ──► parsers ──► SQLite ──► MySQL / LIS API / result webhook
                        │                         │
                        └────── IPC ──────► Angular renderer (console, settings)
 ```

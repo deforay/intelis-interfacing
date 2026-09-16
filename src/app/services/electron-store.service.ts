@@ -45,6 +45,7 @@ export class ElectronStoreService {
     // main and must not flow through renderer settings snapshots or exports.
     delete storeCopy.intelisConnection;
     delete storeCopy.sourceInstallationId;
+    delete storeCopy.resultWebhook;
 
     return storeCopy;
   }

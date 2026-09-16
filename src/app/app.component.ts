@@ -1,11 +1,11 @@
 import { Component, ChangeDetectionStrategy } from '@angular/core';
 import { ElectronService } from './core/services';
 import { TranslateService } from '@ngx-translate/core';
-import { APP_CONFIG } from '../environments/environment';
 import { v4 as uuidv4 } from 'uuid';
 import { DatabaseService } from './services/database.service';
 import { IntelisResultSyncService } from './services/intelis-result-sync.service';
 import { IntelisUsageSyncService } from './services/intelis-usage-sync.service';
+import { ResultWebhookSyncService } from './services/result-webhook-sync.service';
 
 @Component({
   standalone: false,
@@ -22,7 +22,8 @@ export class AppComponent {
     private translate: TranslateService,
     private databaseService: DatabaseService,
     private intelisResultSync: IntelisResultSyncService,
-    private intelisUsageSync: IntelisUsageSyncService
+    private intelisUsageSync: IntelisUsageSyncService,
+    private resultWebhookSync: ResultWebhookSyncService
   ) {
     this.translate.setFallbackLang('en');
 
@@ -35,6 +36,7 @@ export class AppComponent {
       });
       this.intelisResultSync.start();
       this.intelisUsageSync.start();
+      this.resultWebhookSync.start();
       console.log(process.env);
       console.log('Run in electron');
       console.log('Electron ipcRenderer', this.electronService.ipcRenderer);

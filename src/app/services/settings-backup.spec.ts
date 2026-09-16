@@ -25,7 +25,8 @@ function sampleSettings(): any {
     },
     encryptionKey: 'top-level-key',
     intelisConnection: { encryptedCredential: 'ciphertext' },
-    sourceInstallationId: 'source-id'
+    sourceInstallationId: 'source-id',
+    resultWebhook: { enabled: true, url: 'http://engine.example.test/results', encryptedSecret: 'sealed' }
   };
 }
 
@@ -53,6 +54,7 @@ describe('settings export preparation', () => {
       const settings = prepareSettingsForExport(sampleSettings(), { includeCredentials });
       expect(settings.intelisConnection).toBeUndefined();
       expect(settings.sourceInstallationId).toBeUndefined();
+      expect(settings.resultWebhook).toBeUndefined();
     });
   });
 

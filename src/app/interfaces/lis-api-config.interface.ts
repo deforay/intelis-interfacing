@@ -11,10 +11,6 @@ export interface LisApiConfig {
     enabled: boolean;
     endpoint: string;
   };
-  sendResults: {
-    enabled: boolean;
-    endpoint: string;
-  };
 }
 
 export interface LisInstrument {

@@ -1039,6 +1039,18 @@ select.form-control {
   font-size: 0.875rem;
 }
 
+.connection-alert.warning {
+  border-color: rgba($warning-color, 0.35);
+  background: rgba($warning-color, 0.08);
+  color: $text-color;
+}
+
+.connection-alert.success {
+  border-color: rgba($success-color, 0.25);
+  background: rgba($success-color, 0.06);
+  color: $success-color;
+}
+
 .connection-code-input {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   letter-spacing: 0.04em;
@@ -1120,14 +1132,6 @@ select.form-control {
     cursor: pointer;
   }
 
-  &.coming-soon {
-    color: $text-light;
-    cursor: not-allowed;
-
-    input[type="checkbox"] {
-      cursor: not-allowed;
-    }
-  }
 }
 
 .fetch-preview {

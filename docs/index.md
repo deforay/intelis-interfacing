@@ -34,6 +34,9 @@ Nothing about the tool assumes a particular LIS.
    with the raw transmission it came from.
 4. The LIS reads the results from MySQL, or the tool pushes them to an API, and
    the sync state of each result is visible in the console.
+5. Optionally, every result is also forwarded as JSON to any HTTP receiver,
+   such as an integration engine. See
+   [result forwarding](guide/settings.md#result-forwarding).
 
 ## What it will not do
 

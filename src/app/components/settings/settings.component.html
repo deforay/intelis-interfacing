@@ -472,23 +472,6 @@
                 </div>
               </div>
 
-              <div class="feature-section" formGroupName="sendResults">
-                <div class="feature-header">
-                  <h4>Send Results</h4>
-                  <label class="toggle-label coming-soon">
-                    <input type="checkbox" formControlName="enabled" [attr.disabled]="true">
-                    <span>Coming Soon</span>
-                  </label>
-                </div>
-                <div *ngIf="settingsForm.get('lisApiSettings.sendResults.enabled').value">
-                  <div class="form-group">
-                    <label>Endpoint</label>
-                    <input type="text" formControlName="endpoint" class="form-control"
-                      placeholder="/api/results">
-                  </div>
-                </div>
-              </div>
-
             </div>
           </div>
         </div>
@@ -654,6 +637,125 @@
                 <button type="button" class="btn btn-outline-success" (click)="addInstrument()">
                   <i class="fas fa-plus"></i>
                   <span>Add Another Instrument</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Result Forwarding -->
+        <div *ngSwitchCase="'forwarding'">
+          <div class="config-card" [formGroup]="resultWebhookForm">
+            <div class="card-header">
+              <div class="header-content">
+                <i class="fas fa-share-square"></i>
+                <div>
+                  <h2>Result Forwarding</h2>
+                  <span class="header-subtitle">Send every new result to another system over HTTP</span>
+                </div>
+              </div>
+            </div>
+            <div class="card-body">
+              <p class="section-description">
+                Optional, and separate from the LIS connection: results are still stored and delivered exactly as
+                before. Each new result is also sent as JSON to the URL below — an integration engine such as Open
+                Integration Engine or Mirth Connect, or any service that accepts an HTTP POST. A result stays queued
+                until the receiver answers with a 2xx status.
+              </p>
+
+              <div *ngIf="resultWebhookState.configured" class="connection-summary"
+                [ngClass]="resultWebhookState.enabled && resultWebhookState.health === 'attention' ? 'attention' : 'connected'">
+                <div class="connection-details">
+                  <div>
+                    <span class="detail-label">Status</span>
+                    <span>{{ !resultWebhookState.enabled ? 'Off' :
+                      resultWebhookState.health === 'attention' ? 'Needs attention' :
+                      resultWebhookState.health === 'delivering' ? 'Delivering' : 'Waiting for results' }}</span>
+                  </div>
+                  <div>
+                    <span class="detail-label">Waiting to send</span>
+                    <span>{{ resultWebhookPending === null ? '—' : resultWebhookPending }}</span>
+                  </div>
+                  <div>
+                    <span class="detail-label">Last delivered</span>
+                    <span>{{ resultWebhookState.lastDeliveredAt ? (resultWebhookState.lastDeliveredAt | date:'medium') : 'Never' }}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="connection-alert" *ngIf="resultWebhookState.enabled && resultWebhookState.lastError">
+                <i class="fas fa-exclamation-circle"></i>
+                <span>{{ resultWebhookState.lastError.message }}</span>
+              </div>
+
+              <div class="form-group">
+                <label class="checkbox-label">
+                  <input type="checkbox" formControlName="enabled">
+                  <span>Forward results to this receiver</span>
+                </label>
+                <small class="help-text" *ngIf="!resultWebhookState.activatedAt">
+                  Results already stored on this computer when you first save this section are not sent. Results
+                  received after that are sent while forwarding is on, and kept until it is.
+                </small>
+              </div>
+
+              <div class="form-group">
+                <label for="resultWebhookUrl">Receiver URL</label>
+                <input id="resultWebhookUrl" type="url" formControlName="url" class="form-control"
+                  placeholder="http://localhost:8081/results" autocomplete="off" spellcheck="false">
+              </div>
+
+              <div class="connection-alert warning" *ngIf="resultWebhookPlainHttp">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span>This URL uses plain HTTP to another computer, so results and credentials cross the network
+                  unencrypted. Use HTTPS unless the receiver is on a network you trust.</span>
+              </div>
+
+              <div class="form-group">
+                <label for="resultWebhookAuthType">Authentication</label>
+                <div class="custom-select-wrapper">
+                  <select id="resultWebhookAuthType" formControlName="authType" class="form-control">
+                    <option value="none">None</option>
+                    <option value="bearer">Bearer token</option>
+                    <option value="basic">Basic (username and password)</option>
+                    <option value="apikey">API key (X-API-Key header)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-row" *ngIf="resultWebhookForm.get('authType').value !== 'none'">
+                <div class="form-group half-width" *ngIf="resultWebhookForm.get('authType').value === 'basic'">
+                  <label for="resultWebhookUsername">Username</label>
+                  <input id="resultWebhookUsername" type="text" formControlName="username" class="form-control"
+                    autocomplete="off">
+                </div>
+                <div class="form-group" [class.half-width]="resultWebhookForm.get('authType').value === 'basic'">
+                  <label for="resultWebhookSecret">{{ resultWebhookSecretLabel }}</label>
+                  <input id="resultWebhookSecret" type="password" formControlName="secret" class="form-control"
+                    autocomplete="new-password"
+                    [placeholder]="resultWebhookSecretSaved ? 'Saved — leave blank to keep it' : ''">
+                </div>
+              </div>
+
+              <div class="connection-alert" *ngIf="resultWebhookError">
+                <i class="fas fa-exclamation-circle"></i>
+                <span>{{ resultWebhookError }}</span>
+              </div>
+              <div class="connection-alert success" *ngIf="resultWebhookMessage">
+                <i class="fas fa-check-circle"></i>
+                <span>{{ resultWebhookMessage }}</span>
+              </div>
+
+              <div class="form-actions connection-actions">
+                <button type="button" class="btn btn-secondary" (click)="testResultWebhook()"
+                  [disabled]="resultWebhookBusy || !resultWebhookForm.get('url').value">
+                  <i class="fas" [ngClass]="resultWebhookBusy ? 'fa-spinner fa-spin' : 'fa-paper-plane'"></i>
+                  <span>Send test</span>
+                </button>
+                <button type="button" class="btn btn-primary" (click)="saveResultWebhook()"
+                  [disabled]="resultWebhookBusy || !resultWebhookForm.get('url').value">
+                  <i class="fas fa-save"></i>
+                  <span>Save forwarding</span>
                 </button>
               </div>
             </div>

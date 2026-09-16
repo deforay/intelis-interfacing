@@ -51,11 +51,6 @@ export class LisApiService {
     );
   }
 
-  // Stub for future implementation
-  sendResults(_config: LisApiConfig, _results: any): Observable<any> {
-    throw new Error('Send Results via API is not yet implemented');
-  }
-
   private buildUrl(baseUrl: string, endpoint: string): string {
     const base = baseUrl.replace(/\/+$/, '');
     const path = endpoint.startsWith('/') ? endpoint : '/' + endpoint;

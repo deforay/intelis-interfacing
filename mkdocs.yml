@@ -93,5 +93,6 @@ nav:
       - Protocols on the wire: technical/protocols.md
       - Analyzers as they behave: technical/analyzers.md
       - What is stored, and where: technical/storage.md
+      - Result webhook: technical/result-webhook.md
       - Usage statistics: technical/telemetry.md
       - Building and releasing: technical/building.md

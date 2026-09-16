@@ -7,6 +7,7 @@ import * as sqlite3 from '@vscode/sqlite3';
 import * as log from 'electron-log/main';
 import { setupSqlite } from './sqlite3helper.main';
 import { registerIntelisConnectionIpc } from './intelis-connection.main';
+import { registerResultWebhookIpc } from './result-webhook.main';
 import { registerUpdateCheckIpc } from './update-check.main';
 import {
   registerSettingsBackupIpc,
@@ -579,6 +580,7 @@ try {
 
   function registerIpcHandlers() {
     registerIntelisConnectionIpc(store);
+    registerResultWebhookIpc(store, getSQLiteDBConnection);
     registerUpdateCheckIpc();
 
     // Settings export/import and scheduled local backups. Owns the store

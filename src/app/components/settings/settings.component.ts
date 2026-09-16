@@ -1,5 +1,5 @@
 import { Component, OnInit, OnDestroy, ChangeDetectionStrategy } from '@angular/core';
-import { FormBuilder, FormGroup, FormArray, Validators, AbstractControl, ValidatorFn, FormControl } from '@angular/forms';
+import { FormBuilder, FormGroup, FormArray, Validators, AbstractControl, ValidatorFn } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ElectronService } from '../../core/services';
 import { ElectronStoreService } from '../../services/electron-store.service';
@@ -12,6 +12,13 @@ import { DatabaseService } from '../../services/database.service';
 import { LisApiService } from '../../services/lis-api.service';
 import { LisApiConfig } from '../../interfaces/lis-api-config.interface';
 import { IntelisConnectionService } from '../../services/intelis-connection.service';
+import { ResultWebhookService } from '../../services/result-webhook.service';
+import { ResultWebhookSyncService } from '../../services/result-webhook-sync.service';
+import {
+  isPlainHttpToAnotherHost,
+  ResultWebhookSaveRequest,
+  ResultWebhookState
+} from '../../../../shared/result-webhook';
 import {
   formatIntelisConnectionCode,
   getIntelisResultDeliveryLimits,
@@ -50,6 +57,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     { id: 'database', label: 'Database', icon: 'fas fa-database' },
     { id: 'instruments', label: 'Instruments', icon: 'fas fa-microscope' },
     { id: 'lisapi', label: 'LIS Connection', icon: 'fas fa-plug' },
+    { id: 'forwarding', label: 'Result Forwarding', icon: 'fas fa-share-square' },
     { id: 'backup', label: 'Backup & Restore', icon: 'fas fa-shield-alt' },
     { id: 'troubleshoot', label: 'Troubleshooting', icon: 'fas fa-wrench' }
   ];
@@ -64,6 +72,17 @@ export class SettingsComponent implements OnInit, OnDestroy {
   public lisConnectionChoice: 'intelis' | 'other' | null = null;
   public logCleanupBusy: boolean = false;
   public logCleanupMessage: string = '';
+
+  // Result forwarding. Its own form: it saves on its own button, without the
+  // instrument reconnect the main settings save performs.
+  public resultWebhookForm: FormGroup;
+  public resultWebhookState: ResultWebhookState = {
+    configured: false, enabled: false, url: '', authType: 'none', username: '', hasSecret: false
+  };
+  public resultWebhookPending: number | null = null;
+  public resultWebhookBusy: boolean = false;
+  public resultWebhookError: string = '';
+  public resultWebhookMessage: string = '';
 
   // Backup & restore
   public backupConfig: SettingsBackupConfig = { ...DEFAULT_SETTINGS_BACKUP_CONFIG };
@@ -128,7 +147,9 @@ export class SettingsComponent implements OnInit, OnDestroy {
     private connectionManagerService: ConnectionManagerService,
     private readonly databaseService: DatabaseService,
     private readonly lisApiService: LisApiService,
-    private readonly intelisConnectionService: IntelisConnectionService
+    private readonly intelisConnectionService: IntelisConnectionService,
+    private readonly resultWebhookService: ResultWebhookService,
+    private readonly resultWebhookSync: ResultWebhookSyncService
   ) {
 
     const commonSettingsStore = this.electronStoreService.get('commonConfig');
@@ -171,10 +192,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
         fetchInstruments: this.formBuilder.group({
           enabled: [false],
           endpoint: ['/api/instruments']
-        }),
-        sendResults: this.formBuilder.group({
-          enabled: [false],
-          endpoint: ['/api/results']
         })
       }),
       intelisConnection: this.formBuilder.group({
@@ -186,6 +203,14 @@ export class SettingsComponent implements OnInit, OnDestroy {
         instrumentSettingsStore.map(instrument => this.formBuilder.group(instrument))
       )
     }, { validators: [this.uniqueInstrumentNameValidator(), this.uniqueIpPortValidator()] });
+
+    this.resultWebhookForm = this.formBuilder.group({
+      enabled: [false],
+      url: [''],
+      authType: ['none'],
+      username: [''],
+      secret: ['']
+    });
 
     this.settingsForm.patchValue({
       commonSettings: commonSettingsStore
@@ -236,6 +261,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
       if (!result.ok) this.intelisError = result.error?.message || 'Unable to load the InteLIS connection.';
     });
     void this.loadBackupStatus();
+    void this.loadResultWebhook();
   }
 
   ngOnDestroy(): void {
@@ -312,6 +338,112 @@ export class SettingsComponent implements OnInit, OnDestroy {
     }
     this.intelisError = '';
     this.settingsForm.get('intelisConnection.connectionCode').setValue('');
+  }
+
+  get resultWebhookPlainHttp(): boolean {
+    return isPlainHttpToAnotherHost((this.resultWebhookForm.get('url').value || '').trim());
+  }
+
+  /** A blank secret keeps the saved one only for the same authentication type; the main process enforces this too. */
+  get resultWebhookSecretSaved(): boolean {
+    return this.resultWebhookState.hasSecret
+      && this.resultWebhookState.authType === this.resultWebhookForm.get('authType').value;
+  }
+
+  get resultWebhookSecretLabel(): string {
+    switch (this.resultWebhookForm.get('authType').value) {
+      case 'bearer': return 'Bearer token';
+      case 'basic': return 'Password';
+      default: return 'API key';
+    }
+  }
+
+  async loadResultWebhook(): Promise<void> {
+    const result = await this.resultWebhookService.load();
+    if (!result.ok) {
+      this.resultWebhookError = result.error?.message || 'Unable to load result forwarding settings.';
+      return;
+    }
+    this.applyResultWebhookState(result.data);
+    await this.refreshResultWebhookPending();
+  }
+
+  async testResultWebhook(): Promise<void> {
+    this.resultWebhookBusy = true;
+    this.resultWebhookError = '';
+    this.resultWebhookMessage = '';
+    try {
+      const result = await this.resultWebhookService.test(this.resultWebhookRequest());
+      if (result.ok) {
+        this.resultWebhookMessage = `The receiver accepted a test request (HTTP ${result.data?.httpStatus}). No results were sent.`;
+      } else {
+        this.resultWebhookError = result.error?.message || 'The test request failed.';
+      }
+    } finally {
+      this.resultWebhookBusy = false;
+    }
+  }
+
+  async saveResultWebhook(): Promise<void> {
+    const request = this.resultWebhookRequest();
+    this.resultWebhookBusy = true;
+    this.resultWebhookError = '';
+    this.resultWebhookMessage = '';
+    try {
+      // The main process decides whether this is the first save, and marks the
+      // results already stored, from its own record rather than this form's.
+      const result = await this.resultWebhookService.save(request);
+      if (!result.ok) {
+        this.resultWebhookError = result.error?.message || 'Unable to save result forwarding settings.';
+        return;
+      }
+      this.applyResultWebhookState(result.data);
+      this.resultWebhookMessage = result.data.enabled
+        ? 'Saved. New results will be forwarded to this receiver.'
+        : 'Saved. Forwarding is off; new results are kept and sent once it is turned back on.';
+      this.resultWebhookSync.wake();
+      await this.refreshResultWebhookPending();
+    } catch (error) {
+      this.resultWebhookError = `Unable to save result forwarding settings: ${error?.message ?? error}`;
+    } finally {
+      this.resultWebhookBusy = false;
+    }
+  }
+
+  private resultWebhookRequest(): ResultWebhookSaveRequest {
+    const value = this.resultWebhookForm.value;
+    return {
+      enabled: value.enabled === true,
+      url: (value.url || '').trim(),
+      authType: value.authType,
+      username: (value.username || '').trim(),
+      secret: value.secret || undefined
+    };
+  }
+
+  private applyResultWebhookState(state: ResultWebhookState): void {
+    this.resultWebhookState = state;
+    this.resultWebhookForm.reset({
+      enabled: state.enabled,
+      url: state.url,
+      authType: state.authType,
+      username: state.username,
+      secret: ''
+    });
+  }
+
+  private async refreshResultWebhookPending(): Promise<void> {
+    if (!this.resultWebhookState.activatedAt) {
+      // Until the first save, the queue is this installation's whole history,
+      // none of which will be sent.
+      this.resultWebhookPending = null;
+      return;
+    }
+    try {
+      this.resultWebhookPending = await this.databaseService.countPendingResultWebhookResults();
+    } catch {
+      this.resultWebhookPending = null;
+    }
   }
 
   get intelisMachineCount(): number {

@@ -31,6 +31,7 @@ The same shape in SQLite and, when configured, MySQL.
 | `analysed_date_time`, `specimen_date_time`, `authorised_date_time` | As reported |
 | `result_status` | `1` final, `0` not |
 | `lims_sync_status` | `0` pending, `1` synced, `2` failed |
+| `result_webhook_status` | Result forwarding only: `0` pending, `1` delivered, `2` not queued. Local to SQLite. See [result webhook](result-webhook.md). |
 | `raw_text` | The records this row was parsed from |
 | `notes` | Comment records, e.g. an analyzer's explanation of a failed run |
 

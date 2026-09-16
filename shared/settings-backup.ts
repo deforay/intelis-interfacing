@@ -112,8 +112,13 @@ export type SettingsExport = PlainSettingsExport | EncryptedSettingsExport;
  * results and usage. Copying it to a second machine produces two installs
  * claiming to be the same one, which breaks result idempotency — so unlike
  * credentials, there is no "include these" option.
+ *
+ * `resultWebhook` is bound to this machine for the same reason: its secret is
+ * sealed to this computer's keychain, and its activation decides which of this
+ * database's results are forwarded. Restored elsewhere, it would switch
+ * forwarding on for a database it never looked at.
  */
-export const INSTALLATION_IDENTITY_KEYS = ['intelisConnection', 'sourceInstallationId'] as const;
+export const INSTALLATION_IDENTITY_KEYS = ['intelisConnection', 'sourceInstallationId', 'resultWebhook'] as const;
 
 /** Credential fields, omitted unless the export is encrypted with a passphrase. */
 const SENSITIVE_COMMON_CONFIG_FIELDS = ['mysqlPassword', 'encryptionKey'] as const;

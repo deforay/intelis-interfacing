@@ -52,6 +52,18 @@ configuration screen.
 - **Last Results Synced to LIS** on the console tells you when it last worked,
   which usually locates the change that broke it.
 
+## Results are not reaching the forwarding receiver
+
+- **Settings → Result Forwarding** shows the status, the number of results
+  waiting to send, and the last error from the receiver.
+- **Send test** checks the URL and credentials without sending results.
+- A result counts as sent only when the receiver answers with a `2xx` status.
+  Any other answer keeps the result queued, and the tool retries automatically.
+- If **Waiting to send** does not reach zero, the receiver may be refusing one
+  particular result. The other results still go through. The log records the
+  receiver's answer, for example `http_422`.
+- Results already stored when the section was first saved are never sent.
+
 ## Where the log files are
 
 Log files sit beside the database, in the tool's data directory:
