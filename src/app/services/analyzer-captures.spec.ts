@@ -522,6 +522,22 @@ describe('Protocol mismatch', () => {
     expect(wire.raw()).toEqual([]);
   });
 
+  it('still reads an HL7 message that arrives in the same read as ASTM bytes', () => {
+    for (const bytes of [
+      mllp(COBAS_5800_CAPTURE[3]) + ENQ,
+      ENQ + mllp(COBAS_5800_CAPTURE[3]),
+      ENQ + genexpertFrames(genexpertMessage(GENEXPERT_TESTS[0])).join('') + EOT + mllp(COBAS_5800_CAPTURE[3])
+    ]) {
+      const wire = createWireHarness({ protocol: 'hl7', machineType: 'roche-cobas-5800' });
+
+      wire.receive(bytes);
+
+      expect(wire.saved().map(result => [result.order_id, result.results])).toEqual([['VL00000427', '367']]);
+      expect(wire.raw()).toEqual([mllp(COBAS_5800_CAPTURE[3])]);
+      expect(wire.failures()).toEqual(['protocol_mismatch_astm_on_hl7']);
+    }
+  });
+
   it('reports ASTM on an HL7 port once, not on every attempt, and still reads HL7 that follows', () => {
     const wire = createWireHarness({ protocol: 'hl7', machineType: 'roche-cobas-5800' });
 

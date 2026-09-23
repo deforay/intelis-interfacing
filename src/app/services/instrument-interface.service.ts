@@ -641,23 +641,27 @@ export class InstrumentInterfaceService {
     let that = this;
     instrumentConnectionData.transmissionStatusSubject.next(true);
     that.utilitiesService.logger('info', 'Receiving HL7 data', instrumentConnectionData.instrumentId);
-    const hl7Text = that.utilitiesService.hex2ascii(data.toString('hex'));
+    const receivedText = that.utilitiesService.hex2ascii(data.toString('hex'));
     const bufferKey = instrumentConnectionData.instrumentId;
 
-    // ENQ, or a frame opening with its number and a record type, is an
-    // instrument speaking ASTM; neither can occur in HL7. It is not answered:
+    // ENQ, EOT and STX-framed frames are an instrument speaking ASTM; none of
+    // those bytes can occur in HL7. They are taken out and not answered:
     // without our ACK the instrument keeps its results and sends them again
-    // once the protocols agree. Buffering it would only corrupt the next
-    // HL7 message.
-    if (that.isASTMTraffic(hl7Text)) {
-      instrumentConnectionData.transmissionStatusSubject.next(false);
+    // once the protocols agree. Only they are taken out, because TCP can
+    // deliver them in the same read as a complete HL7 message, which is
+    // still read as usual.
+    const hl7Text = that.withoutASTMTraffic(receivedText);
+    if (hl7Text !== receivedText) {
       that.reportProtocolMismatch(
         instrumentConnectionData,
         'protocol_mismatch_astm_on_hl7',
         'Received ASTM but this instrument is set to HL7 here. Nothing was acknowledged, so the instrument keeps its results. ' +
         'Set the instrument and this interface to the same protocol.'
       );
-      return;
+      if (!hl7Text) {
+        instrumentConnectionData.transmissionStatusSubject.next(false);
+        return;
+      }
     }
     const bufferedData = (that.hl7ReceiveBuffers.get(bufferKey) ?? '') + hl7Text;
 
@@ -753,10 +757,17 @@ export class InstrumentInterfaceService {
   }
 
   /**
-   * True when bytes that reached an HL7 port are ASTM.
+   * Bytes that reached an HL7 port with any ASTM traffic taken out: whole
+   * frames (STX, frame number, text, ETX or ETB, checksum, CR LF) and the
+   * ENQ and EOT around them.
    */
-  private isASTMTraffic(text: string): boolean {
-    return text.includes('\x05') || /\x02[0-7][A-Z]\|/.test(text);
+  private withoutASTMTraffic(text: string): string {
+    if (!/[\x02\x04\x05]/.test(text)) {
+      return text;
+    }
+    return text
+      .replace(/\x02[\s\S]*?(?:[\x03\x17][0-9A-Fa-f]{0,2}\r?\n?|$)/g, '')
+      .replace(/[\x04\x05]/g, '');
   }
 
   /**
