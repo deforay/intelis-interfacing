@@ -18,6 +18,10 @@ export class LoggingService implements OnDestroy {
   // faster than the 10s drain. If persistence ever stalls, an unbounded queue
   // grows until the renderer dies, so cap it and drop the oldest entries.
   private static readonly MAX_QUEUED_LOGS = 20000;
+  // WHY: the receive path logs whole TCP chunks, up to about 64 KB each. The
+  // entry cap alone still let a stalled queue hold over a gigabyte. The bytes
+  // themselves are kept in raw_data, so a log line only needs their start.
+  static readonly MAX_MESSAGE_LENGTH = 4096;
   // If a batch write hasn't returned in this long it is treated as lost, so a
   // single stuck write can't block every later batch for the rest of the session.
   private static readonly PROCESSING_STALL_TIMEOUT_MS = 180000;
@@ -48,6 +52,7 @@ export class LoggingService implements OnDestroy {
     instrumentId?: string,
     options: LogOptions = {}
   ) {
+    message = LoggingService.capMessage(message);
     const logEntry: LogEntry = {
       id: ++logEntrySeq,
       type,
@@ -81,6 +86,18 @@ export class LoggingService implements OnDestroy {
         this.droppedLogCount += overflow;
       }
     }
+  }
+
+  /**
+   * The message, cut to MAX_MESSAGE_LENGTH characters with a note of how
+   * much was left out.
+   */
+  static capMessage(message: string): string {
+    if (typeof message !== 'string' || message.length <= LoggingService.MAX_MESSAGE_LENGTH) {
+      return message;
+    }
+    const omitted = message.length - LoggingService.MAX_MESSAGE_LENGTH;
+    return `${message.slice(0, LoggingService.MAX_MESSAGE_LENGTH)}… (${omitted} more characters not logged)`;
   }
 
   logSystemError(message: string, instrumentId?: string, displayInConsole: boolean = false) {
