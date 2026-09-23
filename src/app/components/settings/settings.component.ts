@@ -14,7 +14,7 @@ import { LisApiConfig } from '../../interfaces/lis-api-config.interface';
 import { IntelisConnectionService } from '../../services/intelis-connection.service';
 import { ResultWebhookService } from '../../services/result-webhook.service';
 import { normalizeResultRules, ResultRule } from '../../../../shared/result-rules';
-import { instrumentForSave, savedInstrumentFormGroup } from './instrument-form';
+import { applyRecommendedProtocol, instrumentForSave, protocolMismatchWarning, savedInstrumentFormGroup } from './instrument-form';
 import { DATE_DISPLAY_FORMATS, dateDisplayFormatLabel, DEFAULT_DATE_DISPLAY_FORMAT } from '../../../../shared/date-display';
 import { ResultWebhookSyncService } from '../../services/result-webhook-sync.service';
 import {
@@ -588,6 +588,15 @@ export class SettingsComponent implements OnInit, OnDestroy {
     if (connectionMode === 'tcpserver') {
       this.instrumentsSettings.at(index).get('analyzerMachineHost').setValue(this.machineIps[0]);
     }
+  }
+
+  onMachineTypeChange(index: number): void {
+    applyRecommendedProtocol(this.instrumentsSettings.at(index) as FormGroup);
+  }
+
+  protocolWarning(index: number): string | null {
+    const instrument = this.instrumentsSettings.at(index);
+    return protocolMismatchWarning(instrument?.get('analyzerMachineType')?.value, instrument?.get('interfaceCommunicationProtocol')?.value);
   }
 
   // Getter for easy access to the instrumentsSettings FormArray

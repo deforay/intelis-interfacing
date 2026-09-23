@@ -540,6 +540,14 @@ select.form-control {
   color: $danger-color;
 }
 
+// $warning-color is too light to read as small text on white
+.warning-message {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: #a35c00;
+}
+
 .form-actions {
   margin-top: 1.5rem;
   padding-top: 1.5rem;

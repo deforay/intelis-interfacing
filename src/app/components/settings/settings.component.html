@@ -556,6 +556,7 @@
                             <option value="hl7">HL7</option>
                           </select>
                         </div>
+                        <div class="warning-message" *ngIf="protocolWarning(i) as warning">{{ warning }}</div>
                       </div>
 
                       <div class="form-row">
@@ -591,7 +592,8 @@
                       <div class="form-group">
                         <label [attr.for]="'instrument-' + i + '-analyzerMachineType'">Analyzer Type</label>
                         <div class="custom-select-wrapper">
-                          <select [id]="'instrument-' + i + '-analyzerMachineType'" formControlName="analyzerMachineType" class="form-control" required>
+                          <select [id]="'instrument-' + i + '-analyzerMachineType'" formControlName="analyzerMachineType" class="form-control" required
+                            (change)="onMachineTypeChange(i)">
                             <optgroup label="Roche">
                               <option value="roche-cobas-taqman">Roche Cobas Taqman</option>
                               <option value="roche-cobas-4800">Roche Cobas 4800</option>
