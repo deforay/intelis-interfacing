@@ -19,7 +19,7 @@ import { CR } from '../../wire-harness';
 export const COBAS_5800_MESSAGE_TIME = '20260404131145+0100';
 export const COBAS_5800_RESULT_TIME = '20260404180624';
 export const COBAS_5800_RESULT_TIME_FORMATTED = '2026-04-04 18:06:24';
-export const COBAS_5800_OPERATOR = 'labolnrs';
+export const COBAS_5800_OPERATOR = 'labuser1';
 
 function msh(messageId: string): string {
   return `MSH|^~\\&|X800 DM||HOST||${COBAS_5800_MESSAGE_TIME}||OUL^R22^OUL_R22|${messageId}|P|2.5.1|||NE|AL||UNICODE UTF-8|||LAB-29^IHE`;

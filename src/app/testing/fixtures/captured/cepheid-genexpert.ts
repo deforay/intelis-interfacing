@@ -20,12 +20,12 @@
  */
 import { CR, EOT, ENQ, astmFrame } from '../../wire-harness';
 
-export const GENEXPERT_OPERATOR = 'ALBERT MUDUNGWE';
+export const GENEXPERT_OPERATOR = 'EXAMPLE OPERAT1';
 export const GENEXPERT_START_TIME = '20260129114918';
 export const GENEXPERT_END_TIME = '20260129115359';
 export const GENEXPERT_END_TIME_FORMATTED = '2026-01-29 11:53:59';
 const CARTRIDGE = 'Cepheid-1F21001^806911^630912^1113243530^72203^20260825';
-export const GENEXPERT_HEADER = 'H|@^\\|GXM-00000000001||MOH - HARARE HOSPITAL LAB - 806911^GeneXpert^6.2|||||Harare Hospital - 80||P|1394-97|20260307161412';
+export const GENEXPERT_HEADER = 'H|@^\\|GXM-00000000001||EXAMPLE DISTRICT HOSPITAL - 800001^GeneXpert^6.2|||||Example Hospital - 8||P|1394-97|20260307161412';
 
 export interface GeneXpertTest {
   sampleId: string;
@@ -123,7 +123,7 @@ export function genexpertSession(test: GeneXpertTest): string {
 export const GENEXPERT_TESTS: GeneXpertTest[] = [
   { sampleId: 'EID26000576U', assay: 'HIV-1_QUAL 2', result: 'DETECTED' },
   { sampleId: 'EID26000580O', assay: 'HIV-1_QUAL 2', result: 'NOT DETECTED' },
-  { sampleId: 'VALERIAH M', assay: 'HIV-1_QUAL 2', result: 'ERROR', error: { code: '2097', title: 'Operation terminated', description: 'Error 2097: Assay-Specific Termination Error #2: 46, 7, 1, 0' } },
+  { sampleId: 'PATIENT A1', assay: 'HIV-1_QUAL 2', result: 'ERROR', error: { code: '2097', title: 'Operation terminated', description: 'Error 2097: Assay-Specific Termination Error #2: 46, 7, 1, 0' } },
   { sampleId: 'bp26-00064', assay: 'HIV-1_VL 2 2', result: 'NOT DETECTED' },
   { sampleId: 'bp26-00065', assay: 'HIV-1_VL 2 2', result: '1234.56' },
   { sampleId: 'sp26-00147', assay: 'MTB-RIF_ULTRA 2', result: 'NOT DETECTED' }
@@ -148,7 +148,7 @@ export const GENEXPERT_TESTS: GeneXpertTest[] = [
  * - The C record of a failed run is French and carries a no-break space
  *   before the colon: "Erreur 2096: ... n°1 : 18, 30, 0, 0".
  */
-export const GENEXPERT_FR_OPERATOR = 'MUKOMBO KASONGO LAJOIE';
+export const GENEXPERT_FR_OPERATOR = 'EXAMPLE OPERATOR SECND';
 export const GENEXPERT_FR_START_TIME = '20260901132630';
 export const GENEXPERT_FR_END_TIME = '20260901133102';
 export const GENEXPERT_FR_END_TIME_FORMATTED = '2026-09-01 13:31:02';
@@ -239,8 +239,8 @@ export function genexpertFrSession(test: GeneXpertFrTest): string {
 
 export const GENEXPERT_FR_TESTS: GeneXpertFrTest[] = [
   { sampleId: 'Xpert H 040726163316', patientId: '00200 CV', assay: 'HIV-1', result: '60,96', flag: 'N' },
-  { sampleId: 'VL07260009', patientId: 'CV HKP00138', assay: 'HIV-1', result: 'NON DÉTECTÉ', flag: 'A' },
-  { sampleId: 'VL04260007', patientId: 'HKP00389', assay: 'HIV-1', result: 'DÉTECTÉ', flag: '<' },
+  { sampleId: 'VL07260009', patientId: 'CV EXM00138', assay: 'HIV-1', result: 'NON DÉTECTÉ', flag: 'A' },
+  { sampleId: 'VL04260007', patientId: 'EXM00389', assay: 'HIV-1', result: 'DÉTECTÉ', flag: '<' },
   { sampleId: 'VL04260004', assay: 'HIV-1', result: '1420403,41', flag: 'N' },
   { sampleId: 'VL05260008', assay: 'HIV-1', result: 'PAS DE RÉSULTAT', flag: 'A' },
   {
@@ -249,4 +249,87 @@ export const GENEXPERT_FR_TESTS: GeneXpertFrTest[] = [
   },
   { sampleId: 'Xpert H 040726162551', patientId: '076  EID', assay: 'HIV_QUALXC1', result: 'NON DÉTECTÉ', flag: '' },
   { sampleId: 'EID08260001', assay: 'HIV_QUALXC1', result: 'DÉTECTÉ', flag: '' }
+];
+
+/**
+ * GeneXpert 6.5 HL7, captured when a laboratory switched the instrument from
+ * HL7 to ASTM with results still queued. The queued results were already
+ * HL7 (ORU^R32) and went out in ASTM E1381 framing, cut into 240-byte frames
+ * like any other GeneXpert message. Identifiers, names and dates replaced;
+ * the OBX layout is as transmitted but trimmed to the first result lines.
+ */
+export const GENEXPERT_HL7_ON_ASTM_RECORDS = [
+  'MSH|^~\\&|800000 EXAMPLE LAB^GeneXpert^6.5||LIS||20260917183827||ORU^R32^ORU_R30|GXM-00000000003|P|2.5',
+  'PID|1||EXAMPLE||^^||||||',
+  'ORC|RE|1|||||||20260917170829',
+  'OBR|1|||MTBXDR|||||||||||||||||||||F',
+  'TQ1|||||||20260917170829|20260917183818|R',
+  'OBX|1|ST|MTBXDR&INVALID&Xpert MTB-XDR&1|INVALID&|^||||||F|||||^EXAMPLE OPERATOR||20270124~10804~000000000~000000000~800000~Cepheid-0000000',
+  'OBX|2|ST|MTBXDR&INVALID|SPC-ahpC&|NA^||',
+  'OBX|3|ST|MTBXDR&INVALID|SPC-ahpC&Ct|^27.3||',
+  'OBX|4|ST|MTBXDR&MTB&Xpert MTB-XDR&1|MTB&|DETECTED^||||||F|||||^EXAMPLE OPERATOR||20270124~10804~000000000~000000000~800000~Cepheid-0000000',
+  'OBX|5|ST|MTBXDR&MTB|inhA-melt&PkHgt|^232.8||',
+  'OBX|6|ST|MTBXDR&LOW-INH|inhA-melt&PkHgt|^232.8||',
+  'OBX|7|ST|MTBXDR&INH-RES&Xpert MTB-XDR&1|INH Resistance&|NOT DETECTED^||||||F|||||^EXAMPLE OPERATOR||20270124~10804~000000000~000000000~800000~Cepheid-0000000',
+  'SPM|1|00726^||ORH|||||||P'
+];
+
+/**
+ * GeneXpert 6.5, Xpert MTB/RIF Ultra with the host test code "UV2", as
+ * captured from a laboratory that pools sputum. Identifiers, names, serials
+ * and dates replaced; record layout as transmitted, detail readings trimmed
+ * to the first probes.
+ *
+ * What the capture showed:
+ * - Three outcomes per test, each an R record naming it in R.3 and followed
+ *   by its own readings: "MTB" (component "TBPos"), "MTB Trace" ("Trace")
+ *   and "RIF Resistance" ("Rif"). Only those that apply carry a value.
+ * - A trace result leaves "MTB" empty and reports "DETECTED" under "MTB
+ *   Trace", with RIF resistance "INDETERMINATE".
+ * - A pool is sent as one test: O.3 holds the member sample IDs separated
+ *   by commas, P.5 a name such as "POOL 530".
+ */
+export const GENEXPERT_ULTRA_HEADER = 'H|@^\\|GXM-00000000004||800000 EXAMPLE LAB^GeneXpert^6.5|||||LIS||P|1394-97|20260923135235';
+export const GENEXPERT_ULTRA_OPERATOR = 'EXAMPLE OPERATOR';
+export const GENEXPERT_ULTRA_END_TIME_FORMATTED = '2026-09-18 19:34:31';
+
+export interface GeneXpertUltraTest {
+  sampleId: string;
+  patientName: string;
+  mtb: string;
+  trace: string;
+  rif: string;
+  error?: string;
+}
+
+export function genexpertUltraMessage(test: GeneXpertUltraTest): string[] {
+  const instrument = 'Cepheid-0000000^800000^000000000^000000000^00000^20270516';
+  const outcome = (sequence: number, code: string, name: string, value: string) =>
+    `R|${sequence}|^UV2^^${code}^Xpert MTB-RIF Ultra^4^${name}^|${value}^|||||F||${GENEXPERT_ULTRA_OPERATOR}|20260918182822|20260918193431|${instrument}`;
+  const readings = (first: number, code: string) => [
+    `R|${first}|^UV2^^${code}^^^SPC^|PASS^|||`,
+    `R|${first + 1}|^UV2^^${code}^^^SPC^Ct|^27.1|||`,
+    `R|${first + 2}|^UV2^^${code}^^^IS1081-IS6110^|${test.mtb === 'NOT DETECTED' ? 'FAIL' : 'PASS'}^|||`,
+    `R|${first + 3}|^UV2^^${code}^^^rpoB1^|INVALID^|||`
+  ];
+  const error = test.error ? [`C|1|I|Error^2014^Operation terminated^${test.error}^20260918193431|N`] : [];
+  return [
+    GENEXPERT_ULTRA_HEADER,
+    `P|1|||${test.patientName}|^^^^|||||||||||||||||||||||||||||`,
+    `O|1|${test.sampleId}||^^^UV2|R|20260918182822|||||||||ORH||||||||||F`,
+    outcome(1, 'TBPos', 'MTB', test.mtb), ...error, ...readings(2, 'TBPos'),
+    outcome(6, 'Trace', 'MTB Trace', test.trace), ...error, ...readings(7, 'Trace'),
+    outcome(11, 'Rif', 'RIF Resistance', test.rif), ...error, ...readings(12, 'Rif'),
+    'L|1|N'
+  ];
+}
+
+export const GENEXPERT_ULTRA_TESTS: GeneXpertUltraTest[] = [
+  { sampleId: '0734,0735,0736,0737', patientName: 'POOL 0530', mtb: 'NOT DETECTED', trace: '', rif: '' },
+  { sampleId: '0803,0750,0754,0759', patientName: 'POOL 0536', mtb: '', trace: 'DETECTED', rif: 'INDETERMINATE' },
+  { sampleId: '0733', patientName: 'EXAMPLE PATIENT', mtb: 'DETECTED LOW', trace: '', rif: 'NOT DETECTED' },
+  {
+    sampleId: 'Xpert M 000000000001', patientName: 'EXAMPLE PATIENT', mtb: 'ERROR', trace: 'ERROR', rif: 'ERROR',
+    error: 'Error 2014: The digital temperature reading of 16383 for Thermistor B was not within the acceptable range of 188 to 16192'
+  }
 ];

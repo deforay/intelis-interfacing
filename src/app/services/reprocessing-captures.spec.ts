@@ -8,7 +8,7 @@
  * field for field.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { createWireHarness, mllp, ENQ, EOT, WireProtocol } from '../testing/wire-harness';
+import { astmFrame, createWireHarness, mllp, ENQ, EOT, WireProtocol } from '../testing/wire-harness';
 import { RawDataProcessorService } from './raw-data-processor.service';
 import {
   M2000_HEADER, M2000_RUN_SAMPLES, m2000Frames, m2000Message, m2000Session
@@ -19,7 +19,8 @@ import { COBAS_6800_CAPTURE } from '../testing/fixtures/captured/roche-cobas-680
 import { COBAS_4800_RUN, cobas4800Run } from '../testing/fixtures/captured/roche-cobas-4800';
 import { TAQMAN_SAMPLES, taqmanSession } from '../testing/fixtures/captured/roche-cobas-taqman';
 import {
-  GENEXPERT_FR_TESTS, GENEXPERT_TESTS, genexpertFrMessage, genexpertFrames, genexpertMessage
+  GENEXPERT_FR_TESTS, GENEXPERT_HL7_ON_ASTM_RECORDS, GENEXPERT_TESTS, GENEXPERT_ULTRA_TESTS, genexpertFrMessage,
+  genexpertFrames, genexpertMessage, genexpertUltraMessage
 } from '../testing/fixtures/captured/cepheid-genexpert';
 
 // Everything a result carries that came from the analyzer.
@@ -81,6 +82,12 @@ const CAPTURES: Capture[] = [
       protocol,
       machineType: 'cepheid-genexpert',
       send: astmSessions(GENEXPERT_TESTS.map(genexpertMessage), genexpertFrames)
+    },
+    {
+      name: `Cepheid GeneXpert 6.5 MTB/RIF Ultra (${protocol})`,
+      protocol,
+      machineType: 'cepheid-genexpert',
+      send: astmSessions(GENEXPERT_ULTRA_TESTS.map(genexpertUltraMessage), genexpertFrames)
     },
     {
       name: `Cepheid GeneXpert 6.5 French (${protocol})`,
@@ -164,6 +171,21 @@ describe('reprocessing a run that also carries a message without an order', () =
     expect(outcome).toEqual({ success: 1, failed: 0 });
     expect(failures).toEqual([]);
     expect(project(saved)).toEqual(project(live.saved()));
+  });
+});
+
+describe('reprocessing HL7 stored from an instrument set to ASTM here', () => {
+  it('stores nothing and reports the entry as not reprocessed, even with a message start marked inside it', async () => {
+    // As an older build stored it: a frame beginning "H|" was taken for the
+    // start of a message and marked, leaving a part with no MSH segment.
+    const stream = GENEXPERT_HL7_ON_ASTM_RECORDS.map(record => record + '\r').join('');
+    const cut = stream.indexOf('H|inhA');
+    const raw = astmFrame(1, stream.slice(0, cut), { terminator: 'ETB' }) + '##START##' + astmFrame(2, stream.slice(cut), { terminator: 'ETX' });
+
+    const { outcome, saved } = await reprocess('astm-checksum', 'cepheid-genexpert', [raw]);
+
+    expect(outcome).toEqual({ success: 0, failed: 1 });
+    expect(saved).toEqual([]);
   });
 });
 

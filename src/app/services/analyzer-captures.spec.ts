@@ -5,7 +5,7 @@
  * change that alters what a real analyzer's message stores must fail here.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { ACK, EOT, ENQ, NAK, createWireHarness, mllp } from '../testing/wire-harness';
+import { ACK, EOT, ENQ, NAK, astmFrame, createWireHarness, mllp } from '../testing/wire-harness';
 import {
   M2000_RESULT_TIME_FORMATTED, M2000_RUN_SAMPLES, m2000Frames, m2000Message, m2000Session
 } from '../testing/fixtures/captured/abbott-m2000';
@@ -27,7 +27,8 @@ import {
 } from '../testing/fixtures/captured/roche-cobas-taqman';
 import {
   GENEXPERT_END_TIME_FORMATTED, GENEXPERT_FR_END_TIME_FORMATTED, GENEXPERT_FR_OPERATOR, GENEXPERT_FR_TESTS,
-  GENEXPERT_TESTS, genexpertFrMessage, genexpertFrames, genexpertMessage, genexpertSession
+  GENEXPERT_HL7_ON_ASTM_RECORDS, GENEXPERT_TESTS, GENEXPERT_ULTRA_END_TIME_FORMATTED, GENEXPERT_ULTRA_OPERATOR,
+  GENEXPERT_ULTRA_TESTS, genexpertUltraMessage, genexpertFrMessage, genexpertFrames, genexpertMessage, genexpertSession
 } from '../testing/fixtures/captured/cepheid-genexpert';
 
 describe('Abbott m2000 capture (ASTM)', () => {
@@ -238,7 +239,7 @@ describe('Roche cobas 5800 capture (HL7)', () => {
       expect(wire.saved()[3]).toMatchObject({
         test_id: 'VL00000427',
         test_type: 'HIV',
-        tested_by: 'labolnrs',
+        tested_by: 'labuser1',
         analysed_date_time: COBAS_5800_RESULT_TIME_FORMATTED
       });
       expect(wire.saved()[0].tested_by).toBe('');
@@ -264,7 +265,7 @@ describe('Roche cobas 6800/8800 capture (HL7)', () => {
     expect(wire.saved()[0]).toMatchObject({
       test_id: 'WB26-02146',
       test_type: 'HIV',
-      tested_by: 'Lyneldra',
+      tested_by: 'operatr1',
       analysed_date_time: COBAS_6800_RESULT_TIME_FORMATTED,
       result_status: 1
     });
@@ -361,7 +362,7 @@ describe('Cepheid GeneXpert capture (ASTM)', () => {
   const expected = [
     ['EID26000576U', 'HIV-1_QUAL 2', 'DETECTED', '', ''],
     ['EID26000580O', 'HIV-1_QUAL 2', 'NOT DETECTED', '', ''],
-    ['VALERIAH M', 'HIV-1_QUAL 2', 'ERROR', '', 'Error 2097: Assay-Specific Termination Error #2: 46, 7, 1, 0 | Error 2097: Assay-Specific Termination Error #2: 46, 7, 1, 0'],
+    ['PATIENT A1', 'HIV-1_QUAL 2', 'ERROR', '', 'QC ERROR | Error 2097: Assay-Specific Termination Error #2: 46, 7, 1, 0 | Error 2097: Assay-Specific Termination Error #2: 46, 7, 1, 0'],
     ['bp26-00064', 'HIV-1_VL 2 2', 'NOT DETECTED', 'copies/mL', ''],
     ['bp26-00065', 'HIV-1_VL 2 2', '1234.56', 'copies/mL', ''],
     ['sp26-00147', 'MTB-RIF_ULTRA 2', 'NOT DETECTED', '', '']
@@ -397,7 +398,7 @@ describe('Cepheid GeneXpert capture (ASTM)', () => {
       expect(wire.saved().map(result => [result.order_id, result.test_type, result.results, result.test_unit, result.notes])).toEqual(expected);
       expect(wire.saved()[0]).toMatchObject({
         test_id: 'EID26000576U',
-        tested_by: 'ALBERT MUDUNGWE',
+        tested_by: 'EXAMPLE OPERAT1',
         analysed_date_time: GENEXPERT_END_TIME_FORMATTED,
         result_status: 1
       });
@@ -408,6 +409,131 @@ describe('Cepheid GeneXpert capture (ASTM)', () => {
   }
 });
 
+
+/**
+ * An Ultra test reports three outcomes. Reading only the first stored a
+ * trace-positive pool with no result at all, and never stored RIF
+ * resistance.
+ */
+describe('Cepheid GeneXpert 6.5 MTB/RIF Ultra capture (ASTM)', () => {
+  const expected = [
+    ['0734,0735,0736,0737', 'NOT DETECTED', ''],
+    ['0803,0750,0754,0759', 'MTB Trace DETECTED', 'RIF Resistance INDETERMINATE'],
+    ['0733', 'DETECTED LOW', 'RIF Resistance NOT DETECTED'],
+    ['Xpert M 000000000001', 'ERROR', ['MTB Trace ERROR', 'RIF Resistance ERROR', ...Array(3).fill(GENEXPERT_ULTRA_TESTS[3].error)].join(' | ')]
+  ];
+
+  it('keeps an outcome whose value is the same as the result\'s', () => {
+    // Rifampicin resistance detected: both outcomes read "DETECTED"
+    const wire = createWireHarness({ protocol: 'astm-checksum', machineType: 'cepheid-genexpert' });
+
+    wire.receive(ENQ + genexpertFrames(genexpertUltraMessage({ ...GENEXPERT_ULTRA_TESTS[2], mtb: 'DETECTED', rif: 'DETECTED' })).join('') + EOT);
+
+    expect(wire.saved().map(result => [result.results, result.notes])).toEqual([['DETECTED', 'RIF Resistance DETECTED']]);
+  });
+
+  it('keeps a record whole when a frame cut leaves a continuation starting "H|"', () => {
+    const records = genexpertUltraMessage({ ...GENEXPERT_ULTRA_TESTS[2], sampleId: '0733H' });
+    const stream = records.map(record => record + '\r').join('');
+    const cut = stream.indexOf('H||^^^UV2');
+    const wire = createWireHarness({ protocol: 'astm-checksum', machineType: 'cepheid-genexpert' });
+
+    wire.receive(ENQ + astmFrame(1, stream.slice(0, cut), { terminator: 'ETB' }) + astmFrame(2, stream.slice(cut), { terminator: 'ETX' }) + EOT);
+
+    expect(wire.saved().map(result => [result.order_id, result.test_type, result.results])).toEqual([['0733H', 'UV2', 'DETECTED LOW']]);
+  });
+
+  for (const protocol of ['astm-checksum', 'astm-nonchecksum'] as const) {
+    it(`stores the outcome that has a value, with the other outcomes in the notes (${protocol})`, () => {
+      const wire = createWireHarness({ protocol, machineType: 'cepheid-genexpert' });
+
+      for (const test of GENEXPERT_ULTRA_TESTS) {
+        wire.receive(ENQ + genexpertFrames(genexpertUltraMessage(test)).join('') + EOT);
+      }
+
+      expect(wire.sent()).not.toContain(NAK);
+      expect(wire.saved().map(result => [result.order_id, result.results, result.notes])).toEqual(expected);
+      expect(wire.saved()[1]).toMatchObject({
+        test_type: 'UV2',
+        tested_by: GENEXPERT_ULTRA_OPERATOR,
+        analysed_date_time: GENEXPERT_ULTRA_END_TIME_FORMATTED,
+        result_status: 1
+      });
+    });
+  }
+});
+
+/**
+ * An instrument and this interface set to different protocols. Parsed as the
+ * wrong one, a message becomes rows that look like results: HL7 read as ASTM
+ * stored one "Failed" row per OBX segment against a sample ID of "ST". It is
+ * refused and reported instead, so the setting gets fixed.
+ */
+describe('Protocol mismatch', () => {
+  const hl7Session = ENQ + genexpertFrames(GENEXPERT_HL7_ON_ASTM_RECORDS).join('') + EOT;
+
+  for (const protocol of ['astm-checksum', 'astm-nonchecksum'] as const) {
+    it(`stores no result from HL7 sent in ASTM framing, keeps the raw data and reports it (${protocol})`, () => {
+      const wire = createWireHarness({ protocol, machineType: 'cepheid-genexpert' });
+
+      wire.receive(hl7Session);
+
+      expect(wire.sent()).not.toContain(NAK);
+      expect(wire.saved()).toEqual([]);
+      expect(wire.raw()).toHaveLength(1);
+      expect(wire.raw()[0]).toContain('MSH|');
+      expect(wire.failures()).toEqual(['protocol_mismatch_hl7_on_astm']);
+    });
+  }
+
+  it('refuses the whole HL7 message when a frame cut leaves a continuation starting "H|"', () => {
+    // As captured: the 240-byte cut fell inside "LOW-INH|"
+    const stream = GENEXPERT_HL7_ON_ASTM_RECORDS.map(record => record + '\r').join('');
+    const cut = stream.indexOf('H|inhA');
+    const wire = createWireHarness({ protocol: 'astm-checksum', machineType: 'cepheid-genexpert' });
+
+    wire.receive(ENQ + astmFrame(1, stream.slice(0, cut), { terminator: 'ETB' }) + astmFrame(2, stream.slice(cut), { terminator: 'ETX' }) + EOT);
+
+    expect(wire.saved()).toEqual([]);
+    expect(wire.failures()).toEqual(['protocol_mismatch_hl7_on_astm']);
+  });
+
+  it('still stores the ASTM results that follow HL7 on the same connection', () => {
+    const wire = createWireHarness({ protocol: 'astm-checksum', machineType: 'cepheid-genexpert' });
+
+    wire.receive(hl7Session);
+    wire.receive(genexpertSession(GENEXPERT_TESTS[1]));
+
+    expect(wire.saved().map(result => [result.order_id, result.results])).toEqual([['EID26000580O', 'NOT DETECTED']]);
+    expect(wire.failures()).toEqual(['protocol_mismatch_hl7_on_astm']);
+  });
+
+  it('does not acknowledge ASTM sent to an HL7 port, so the instrument keeps its results', () => {
+    const wire = createWireHarness({ protocol: 'hl7', machineType: 'cepheid-genexpert' });
+
+    wire.receive(ENQ);
+    for (const frame of genexpertFrames(genexpertMessage(GENEXPERT_TESTS[0]))) {
+      wire.receive(frame);
+    }
+    wire.receive(EOT);
+
+    expect(wire.sent()).toEqual([]);
+    expect(wire.saved()).toEqual([]);
+    expect(wire.raw()).toEqual([]);
+  });
+
+  it('reports ASTM on an HL7 port once, not on every attempt, and still reads HL7 that follows', () => {
+    const wire = createWireHarness({ protocol: 'hl7', machineType: 'roche-cobas-5800' });
+
+    for (let attempt = 0; attempt < 5; attempt++) {
+      wire.receive(ENQ);
+    }
+    wire.receive(mllp(COBAS_5800_CAPTURE[0]));
+
+    expect(wire.failures()).toEqual(['protocol_mismatch_astm_on_hl7']);
+    expect(wire.saved()).toHaveLength(1);
+  });
+});
 
 /**
  * A laboratory reported empty and truncated results while running an

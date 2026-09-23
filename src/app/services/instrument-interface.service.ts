@@ -23,6 +23,10 @@ export class InstrumentInterfaceService {
   // of a segment arrives in a fraction of this; an analyzer that never sends a
   // <CR> gives up this much before its result is taken as it stands.
   static readonly MLLP_TERMINATOR_GRACE_MS = 50;
+  // An instrument set to ASTM keeps offering its session to an HL7 port every
+  // few seconds. Reporting each attempt would bury the log, so the mismatch is
+  // reported at most this often per instrument.
+  static readonly PROTOCOL_MISMATCH_REPORT_INTERVAL_MS = 10 * 60 * 1000;
 
   // WHY: TCP chunks from different analyzers can arrive concurrently. A shared
   // buffer can merge two patients' messages, so each configured instrument owns
@@ -34,6 +38,7 @@ export class InstrumentInterfaceService {
   private readonly hl7PendingTerminator = new Map<string, { timer: ReturnType<typeof setTimeout>; flush: () => void }>();
   private connectedInstruments = new Map<string, BehaviorSubject<boolean>>();
   private readonly connectionStatusSubscriptions = new Map<string, Subscription>();
+  private readonly lastProtocolMismatchReport = new Map<string, number>();
   private readonly resultSavedSubject = new Subject<{ sampleResult: any; instrumentId: string }>();
   public readonly resultSaved$ = this.resultSavedSubject.asObservable();
 
@@ -591,6 +596,19 @@ export class InstrumentInterfaceService {
         });
       }
 
+      if (parsingResult.hl7Messages) {
+        // Acknowledged frame by frame before the content could be seen, so
+        // the instrument will not send these again: the raw data saved above
+        // is the only copy.
+        that.utilitiesService.logger(
+          'error',
+          `Received ${parsingResult.hl7Messages} HL7 message(s) but this instrument is set to ASTM here. ` +
+          'No results were stored from them; the raw data is kept. Set the instrument and this interface to the same protocol.',
+          instrumentConnectionData.instrumentId
+        );
+        that.recordProcessingFailure('protocol_mismatch_hl7_on_astm', instrumentConnectionData);
+      }
+
       const sampleResults = parsingResult.sampleResults ?? [];
       for (let unreadable = 0; unreadable < (parsingResult.unreadableOrders ?? 0); unreadable++) {
         that.recordProcessingFailure('result_parsing_failed', instrumentConnectionData);
@@ -603,6 +621,9 @@ export class InstrumentInterfaceService {
         );
       }
       if (sampleResults.length === 0) {
+        if (parsingResult.hl7Messages) {
+          return;
+        }
         that.utilitiesService.logger('warn', 'No ASTM results extracted from transmission', instrumentConnectionData.instrumentId);
         that.recordProcessingFailure('no_results_extracted', instrumentConnectionData);
         return;
@@ -622,6 +643,22 @@ export class InstrumentInterfaceService {
     that.utilitiesService.logger('info', 'Receiving HL7 data', instrumentConnectionData.instrumentId);
     const hl7Text = that.utilitiesService.hex2ascii(data.toString('hex'));
     const bufferKey = instrumentConnectionData.instrumentId;
+
+    // ENQ, or a frame opening with its number and a record type, is an
+    // instrument speaking ASTM; neither can occur in HL7. It is not answered:
+    // without our ACK the instrument keeps its results and sends them again
+    // once the protocols agree. Buffering it would only corrupt the next
+    // HL7 message.
+    if (that.isASTMTraffic(hl7Text)) {
+      instrumentConnectionData.transmissionStatusSubject.next(false);
+      that.reportProtocolMismatch(
+        instrumentConnectionData,
+        'protocol_mismatch_astm_on_hl7',
+        'Received ASTM but this instrument is set to HL7 here. Nothing was acknowledged, so the instrument keeps its results. ' +
+        'Set the instrument and this interface to the same protocol.'
+      );
+      return;
+    }
     const bufferedData = (that.hl7ReceiveBuffers.get(bufferKey) ?? '') + hl7Text;
 
     const bufferedBytes = Buffer.byteLength(bufferedData, 'utf8');
@@ -713,6 +750,29 @@ export class InstrumentInterfaceService {
     }
 
     instrumentConnectionData.transmissionStatusSubject.next(false);
+  }
+
+  /**
+   * True when bytes that reached an HL7 port are ASTM.
+   */
+  private isASTMTraffic(text: string): boolean {
+    return text.includes('\x05') || /\x02[0-7][A-Z]\|/.test(text);
+  }
+
+  /**
+   * Reports that the instrument speaks a different protocol from the one set
+   * here, at most once per PROTOCOL_MISMATCH_REPORT_INTERVAL_MS.
+   */
+  private reportProtocolMismatch(instrumentConnectionData: InstrumentConnectionStack, failureCode: string, message: string): void {
+    const instrumentId = instrumentConnectionData.instrumentId;
+    const now = Date.now();
+    const lastReport = this.lastProtocolMismatchReport.get(instrumentId);
+    if (lastReport !== undefined && now - lastReport < InstrumentInterfaceService.PROTOCOL_MISMATCH_REPORT_INTERVAL_MS) {
+      return;
+    }
+    this.lastProtocolMismatchReport.set(instrumentId, now);
+    this.utilitiesService.logger('error', message, instrumentId);
+    this.recordProcessingFailure(failureCode, instrumentConnectionData);
   }
 
   private clearHL7Buffer(instrumentId: string): void {

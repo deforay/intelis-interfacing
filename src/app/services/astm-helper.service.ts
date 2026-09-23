@@ -11,6 +11,8 @@ export interface ASTMProcessingResult {
   sampleResults?: any[];
   /** Orders present in the transmission whose result could not be read. */
   unreadableOrders?: number;
+  /** Messages in the transmission that were HL7, not ASTM, and were not read. */
+  hl7Messages?: number;
 }
 
 export interface ASTMExtraction {
@@ -21,6 +23,11 @@ export interface ASTMExtraction {
    * not a result and not a failure.
    */
   unreadableOrders: number;
+  /**
+   * True when the message is HL7 sent inside ASTM framing: the instrument is
+   * set to HL7 while this side expects ASTM. Nothing is read from it.
+   */
+  isHL7?: boolean;
 }
 
 /**
@@ -461,10 +468,14 @@ export class ASTMHelperService {
 
       const withChecksum = protocolType !== 'astm-nonchecksum';
       let astmData = this.utilitiesService.removeControlCharacters(accumulatedPayload, withChecksum);
+      if (this.isHL7Transmission(astmData)) {
+        return { completed: true, rawData: accumulatedPayload, sampleResults: [], unreadableOrders: 0, hl7Messages: 1 };
+      }
       const fullDataArray = astmData.split(this.START);
 
       const sampleResults: any[] = [];
       let unreadableOrders = 0;
+      let hl7Messages = 0;
 
       for (const partData of fullDataArray) {
         if (!partData) {
@@ -483,6 +494,10 @@ export class ASTMHelperService {
         }
 
         const extraction = this.extractASTMResults(astmArray, partData);
+        if (extraction.isHL7) {
+          hl7Messages++;
+          continue;
+        }
         sampleResults.push(...extraction.results);
         unreadableOrders += extraction.unreadableOrders;
         if (extraction.results.length === 0) {
@@ -494,13 +509,20 @@ export class ASTMHelperService {
         completed: true,
         rawData: accumulatedPayload,
         sampleResults,
-        unreadableOrders
+        unreadableOrders,
+        hl7Messages
       };
     }
 
-    // For normal payload frames, append the data (header frames are pre-processed)
-    const payloadToAppend = processedInfo.isHeader ? processedInfo.text : astmText;
-    const updatedPayload = (this.astmBuffers.get(instrumentId) ?? '') + payloadToAppend;
+    // For normal payload frames, append the data (header frames are pre-processed).
+    // A frame after one that ended in ETB continues the record it cut, so it
+    // cannot start a message however its text begins: a GeneXpert cut inside
+    // "LOW-INH|" leaves a frame starting "H|", and marking it as a new
+    // message split the record in two.
+    const bufferedPayload = this.astmBuffers.get(instrumentId) ?? '';
+    const continuesFrame = /\x17[0-9A-Fa-f]{0,2}[\r\n]*$/.test(bufferedPayload);
+    const payloadToAppend = processedInfo.isHeader && !continuesFrame ? processedInfo.text : astmText;
+    const updatedPayload = bufferedPayload + payloadToAppend;
 
     if (Buffer.byteLength(updatedPayload, 'utf8') > ASTMHelperService.MAX_INCOMPLETE_BUFFER_BYTES) {
       const bufferedBytes = Buffer.byteLength(updatedPayload, 'utf8');
@@ -621,6 +643,12 @@ export class ASTMHelperService {
   extractASTMResults(astmArray: string[], partData: string): ASTMExtraction {
     const results: any[] = [];
     let unreadableOrders = 0;
+    // Read as ASTM, each HL7 segment would become a record of its first
+    // letter: every OBX an order with no result, stored as a failure against
+    // a sample ID of "ST". It is refused whole instead.
+    if (this.isHL7Message(astmArray)) {
+      return { results, unreadableOrders, isHL7: true };
+    }
     for (const group of this.splitASTMRecordsByOrder(astmArray)) {
       const dataArray = this.getASTMDataBlock(group);
       if (Object.keys(dataArray).length === 0) {
@@ -634,6 +662,29 @@ export class ASTMHelperService {
       }
     }
     return { results, unreadableOrders };
+  }
+
+  /**
+   * True when the records are HL7 segments rather than ASTM records. An
+   * instrument set to HL7 can still frame its messages the ASTM way (the
+   * GeneXpert did, sending messages it had queued before its protocol was
+   * changed), so the framing alone does not tell them apart. An ASTM record
+   * type is one letter; an MSH segment cannot be mistaken for one.
+   * @param astmArray Records of one message, frame numbers not yet removed
+   */
+  isHL7Message(astmArray: string[]): boolean {
+    return astmArray.some(record => /^\d*MSH\|/.test(record ?? ''));
+  }
+
+  /**
+   * isHL7Message for a whole transmission, control characters removed,
+   * before it is split into messages. Checked whole because a message start
+   * marked inside an HL7 message (older builds did, where a frame happened to
+   * begin "H|") would leave a part with no MSH segment to recognise.
+   * @param astmData Transmission as returned by removeControlCharacters
+   */
+  isHL7Transmission(astmData: string): boolean {
+    return this.isHL7Message(astmData.split(this.START).join('<CR>').split('<CR>'));
   }
 
   /**
@@ -667,9 +718,16 @@ export class ASTMHelperService {
         const testType = testTypeDetails.length > 1 ? testTypeDetails[3] : ''; // Adjust based on your ASTM format
 
         sampleResult.test_type = testType;
+        let otherOutcomes: string[] = [];
 
         if (dataArray['R'] && dataArray['R'].length > 0) {
-          const rSegmentFields = dataArray['R'][0];
+          const outcomes = this.isGeneXpert(dataArray) ? this.namedOutcomes(dataArray['R']) : [];
+          // The first outcome that has a value is the result. When an earlier
+          // one is empty (an Ultra run with only a trace of MTB sends an
+          // empty "MTB" and "DETECTED" under "MTB Trace") the value alone
+          // would read as a plain detection, so it keeps its name.
+          const reported = outcomes.find(outcome => outcome.value);
+          const rSegmentFields = reported?.fields ?? dataArray['R'][0];
 
           if (!sampleResult.test_type) {
             sampleResult.test_type = (rSegmentFields[2]) ? rSegmentFields[2].replace('^^^', '') : rSegmentFields[2];
@@ -681,18 +739,23 @@ export class ASTMHelperService {
           }
           sampleResult.test_unit = testUnit;
 
-          let resultSegment = rSegmentFields[3];
-
-          let finalResult = null;
-          if (resultSegment) {
-            let resultSegmentComponents = resultSegment.split("^");
-            // Check if the primary result is non-empty and use it; otherwise, check the additional result
-            if (resultSegmentComponents[0].trim()) {
-              finalResult = resultSegmentComponents[0].trim();
-            } else if (resultSegmentComponents.length > 1 && resultSegmentComponents[1].trim()) {
-              finalResult = resultSegmentComponents[1].trim();
-            }
+          let finalResult = this.resultValue(rSegmentFields);
+          // Both words are the analyzer's own: the outcome's name from R.3 and
+          // its value from R.4. "DETECTED" alone would reach the LIS as MTB
+          // detected when the analyzer said only a trace of it, with RIF
+          // resistance indeterminate: a different result, stored silently.
+          if (finalResult && reported && reported !== outcomes[0]) {
+            finalResult = `${reported.name} ${finalResult}`;
           }
+
+          // The other outcomes of the same test (RIF resistance on Ultra, each
+          // drug on MTB-XDR) are part of the result and go with it, every one
+          // that has a value. One is never dropped for repeating the result's
+          // value: "RIF Resistance DETECTED" beside "MTB DETECTED" is the
+          // resistance, not a repeat.
+          otherOutcomes = outcomes
+            .filter(outcome => outcome !== reported && outcome.value)
+            .map(outcome => this.utilitiesService.decodeHtmlEntities(`${outcome.name} ${outcome.value}`));
 
           if (finalResult) {
             finalResult = this.utilitiesService.decodeHtmlEntities(finalResult);
@@ -716,7 +779,8 @@ export class ASTMHelperService {
         sampleResult.raw_text = partData;
         sampleResult.result_status = resultStatus === 'F' ? 1 : 0;
         sampleResult.lims_sync_status = LIMS_SYNC_STATUS.PENDING;
-        sampleResult.notes = this.extractASTMComments(dataArray);
+        const comments = this.extractASTMComments(dataArray);
+        sampleResult.notes = [...otherOutcomes, ...(comments ? [comments] : [])].join(' | ');
 
         return sampleResult;
       }
@@ -726,6 +790,39 @@ export class ASTMHelperService {
       console.error("Error extracting sample result from ASTM:", error);
       return null;
     }
+  }
+
+  /**
+   * The value of an R record: R.4, or its second component when the first is
+   * empty (GeneXpert sends "NOT DETECTED^" but a viral load as "^1234.56").
+   */
+  private resultValue(rSegmentFields: string[]): string | null {
+    const components = (rSegmentFields[3] ?? '').split('^');
+    return components[0]?.trim() || components[1]?.trim() || null;
+  }
+
+  /**
+   * True when the H record names the sender as a GeneXpert
+   * ("...^GeneXpert^6.5" in H.5).
+   */
+  private isGeneXpert(dataArray: any): boolean {
+    return (dataArray['H'] ?? []).some((fields: string[]) => /\^GeneXpert\^/i.test(fields[4] ?? ''));
+  }
+
+  /**
+   * The R records of a GeneXpert message that report a named outcome of the
+   * test, in order, as opposed to the Ct, endpoint and control readings
+   * behind them. The outcome is named in R.3
+   * ("^UV2^^TBPos^Xpert MTB-RIF Ultra^4^MTB^": assay name in the fifth
+   * component, outcome name in the seventh, nothing after it). A reading
+   * such as the viral load "LOG" line has no outcome name. Other analyzers
+   * lay R.3 out differently, so this is for GeneXpert only.
+   */
+  private namedOutcomes(rRecords: string[][]): { fields: string[]; name: string; value: string | null }[] {
+    return rRecords
+      .map(fields => ({ fields, components: (fields[2] ?? '').split('^') }))
+      .filter(({ components }) => components[4]?.trim() && components[6]?.trim() && !components[7]?.trim())
+      .map(({ fields, components }) => ({ fields, name: components[6].trim(), value: this.resultValue(fields) }));
   }
 
   /**

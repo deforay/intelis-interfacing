@@ -194,6 +194,10 @@ export class RawDataProcessorService {
         persistenceResults = await this.withPersistenceTimeout(persistencePromise);
       } else if (protocol === 'astm-checksum' || protocol === 'astm-nonchecksum') {
         const astmData = this.utilsService.removeControlCharacters(rawData, protocol !== 'astm-nonchecksum');
+        if (this.instrumentInterfaceService['astmHelper'].isHL7Transmission(astmData)) {
+          this.utilsService.logger('error', `Raw data ID ${entry.id} holds HL7, but this instrument is set to ASTM; nothing was read from it`, instrumentSettings.analyzerMachineName);
+          return false;
+        }
         const parts = astmData.split(this.instrumentInterfaceService['astmHelper'].getStartMarker());
         const persistencePromises: Promise<boolean>[] = [];
 
@@ -201,9 +205,14 @@ export class RawDataProcessorService {
         // yields exactly the results it yielded when it arrived.
         const astmHelper = this.instrumentInterfaceService['astmHelper'];
         let unreadableOrders = 0;
+        let hl7Messages = 0;
         for (const part of parts) {
           if (!part) continue;
           const extraction = astmHelper.extractASTMResults(part.split(/<CR>/), part);
+          if (extraction.isHL7) {
+            hl7Messages++;
+            continue;
+          }
           unreadableOrders += extraction.unreadableOrders;
           for (const sampleResult of extraction.results) {
             persistencePromises.push(this.instrumentInterfaceService.saveASTMResult(sampleResult, instrumentConnectionData));
@@ -213,6 +222,10 @@ export class RawDataProcessorService {
         // An order that could not be read is a result not recovered: the
         // entry has not been reprocessed, whatever else it yielded.
         if (unreadableOrders > 0) {
+          return false;
+        }
+        if (hl7Messages > 0) {
+          this.utilsService.logger('error', `Raw data ID ${entry.id} holds HL7, but this instrument is set to ASTM; nothing was read from it`, instrumentSettings.analyzerMachineName);
           return false;
         }
       } else {

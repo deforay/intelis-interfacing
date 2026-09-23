@@ -20,7 +20,7 @@ import { CR } from '../../wire-harness';
 
 export const COBAS_6800_RESULT_TIME = '20260308121433';
 export const COBAS_6800_RESULT_TIME_FORMATTED = '2026-03-08 12:14:33';
-export const COBAS_6800_OPERATOR = 'Lyneldra';
+export const COBAS_6800_OPERATOR = 'operatr1';
 const DEVICE = 'C6800/8800^Roche^^~Unknown^Roche^^~ID_000000000000000001^IM300-000001^^';
 const CONTROLS = '592_neg^^99ROC~591_pos^^99ROC';
 
