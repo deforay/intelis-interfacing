@@ -20,6 +20,12 @@ A silent wrong answer is worse than a loud failure. Rank findings that way.
    rewrite allowed is a laboratory's own result rule, configured per
    instrument, and even then `results_as_sent` must hold the result as read
    before any rule, and no rule may replace `Failed` or `Incomplete`.
+   One case is not a rewrite: when an analyzer reports several named
+   outcomes and the value alone would read as a different one, the value is
+   stored with the analyzer's own outcome name. A GeneXpert Ultra trace
+   result is `DETECTED` under "MTB Trace" and is stored as
+   `MTB Trace DETECTED`, because `DETECTED` alone reads as MTB detected.
+   Both words come from the transmission; nothing else may be added.
 2. **The raw transmission is kept verbatim.** `raw_data` is what makes a bad
    parse recoverable: reprocessing re-derives results from it. Anything that
    normalises, truncates or drops the stored bytes destroys the only copy.
