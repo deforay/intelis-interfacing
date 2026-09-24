@@ -58,6 +58,8 @@ let store = new Store();
 let sqlite3Obj: sqlite3.Database = null;
 let sqliteDbName: string = 'interface.db';
 const FORCE_MIGRATION_REPLAY_KEY = 'forceMigrationReplayRequested';
+// Set by the background storage compaction when it freed space worth a rewrite.
+const STORAGE_RECLAIM_PENDING_KEY = 'storageReclaimPending';
 let tray: Tray = null;
 
 function formatUnknownError(error: unknown): string {
@@ -481,10 +483,18 @@ async function copyMySQLMigrationFiles(): Promise<void> {
 }
 
 
-function createWindow(): BrowserWindow {
-  const electronScreen = screen;
-  const size = electronScreen.getPrimaryDisplay().workAreaSize;
+let loggingConfigured = false;
 
+/**
+ * Sends the log to the laboratory's log folder. Called at the very start, so
+ * what happens before the window exists (migrations, a storage rewrite) is
+ * logged there too.
+ */
+function configureLogging(): void {
+  if (loggingConfigured) {
+    return;
+  }
+  loggingConfigured = true;
   log.initialize();
   log.transports.file.level = 'info';
   log.transports.console.level = 'info';
@@ -498,6 +508,13 @@ function createWindow(): BrowserWindow {
   // laboratory for when something needs explaining.
   log.transports.file.resolvePathFn = () =>
     path.join(app.getPath('userData'), 'logs', log.transports.file.fileName as string);
+}
+
+function createWindow(): BrowserWindow {
+  const electronScreen = screen;
+  const size = electronScreen.getPrimaryDisplay().workAreaSize;
+
+  configureLogging();
 
   Store.initRenderer();
   store = new Store();
@@ -825,26 +842,10 @@ try {
     // timeout applies, and the WAL is truncated after it so the space
     // really leaves the disk.
     ipcMain.handle('sqlite3-vacuum', () => {
-      return new Promise((resolve, reject) => {
-        if (!sqlite3Obj) {
-          reject(new Error('SQLite database not initialized'));
-          return;
-        }
-
-        sqlite3Obj.run('VACUUM', (vacuumError) => {
-          if (vacuumError) {
-            log.error(`SQLite VACUUM failed: ${vacuumError.message || vacuumError}`);
-            reject(vacuumError);
-            return;
-          }
-          sqlite3Obj.run('PRAGMA wal_checkpoint(TRUNCATE)', (checkpointError) => {
-            if (checkpointError) {
-              log.warn(`SQLite WAL truncate after VACUUM failed: ${checkpointError.message || checkpointError}`);
-            }
-            resolve({ success: true });
-          });
-        });
-      });
+      if (!sqlite3Obj) {
+        return Promise.reject(new Error('SQLite database not initialized'));
+      }
+      return vacuumSqlite(sqlite3Obj).then(() => ({ success: true }));
     });
 
     ipcMain.handle('force-rerun-migrations', async () => {
@@ -875,7 +876,48 @@ try {
     });
   }
 
+  // VACUUM rewrites the whole file, and the WAL is truncated after it so the
+  // space really leaves the disk.
+  function vacuumSqlite(db: sqlite3.Database): Promise<void> {
+    return new Promise((resolve, reject) => {
+      db.run('VACUUM', (vacuumError) => {
+        if (vacuumError) {
+          log.error(`SQLite VACUUM failed: ${vacuumError.message || vacuumError}`);
+          reject(vacuumError);
+          return;
+        }
+        db.run('PRAGMA wal_checkpoint(TRUNCATE)', (checkpointError) => {
+          if (checkpointError) {
+            log.warn(`SQLite WAL truncate after VACUUM failed: ${checkpointError.message || checkpointError}`);
+          }
+          resolve();
+        });
+      });
+    });
+  }
+
+  // The background compaction frees space inside the database but does not
+  // rewrite it, as results may be arriving. It asks for the rewrite here
+  // instead, at the next start, before the window exists and so before any
+  // instrument can connect.
+  async function reclaimSpaceIfRequested(db: sqlite3.Database): Promise<void> {
+    const pending = store.get(STORAGE_RECLAIM_PENDING_KEY);
+    if (!pending?.sqlite) {
+      return;
+    }
+    // Asked once: a failed rewrite is logged, not retried at every start.
+    store.delete(STORAGE_RECLAIM_PENDING_KEY);
+    const started = Date.now();
+    try {
+      await vacuumSqlite(db);
+      log.info(`Gave the space freed by storage compaction back to the disk in ${Math.round((Date.now() - started) / 1000)} s`);
+    } catch (error) {
+      log.error(`Could not give the space freed by storage compaction back to the disk: ${formatUnknownError(error)}`);
+    }
+  }
+
   app.on('ready', async () => {
+    configureLogging();
     try {
       // First, set up the SQLite database connection
       sqlite3Obj = await new Promise<sqlite3.Database>((resolve, reject) => {
@@ -899,6 +941,7 @@ try {
       await copySqliteMigrationFiles();
       await copyMySQLMigrationFiles();
       await runSqliteMigrations(sqlite3Obj, migrationsPath, forceMigrationReplay);
+      await reclaimSpaceIfRequested(sqlite3Obj);
 
       // IMPORTANT: Register all IPC handlers BEFORE creating the window
       registerIpcHandlers();

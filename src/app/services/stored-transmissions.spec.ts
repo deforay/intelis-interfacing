@@ -40,7 +40,7 @@ interface Setup {
   service: InstrumentInterfaceService;
   processor: RawDataProcessorService;
   connection: any;
-  store: { get(key: string): any; set: ReturnType<typeof vi.fn> };
+  store: { get(key: string): any; set: ReturnType<typeof vi.fn<(key: string, value: any) => void>> };
   receive(bytes: string): Promise<void>;
   rows(sql: string, params?: any[]): any[];
   setInstrument(changes: Record<string, unknown>): void;
@@ -430,6 +430,52 @@ describe('compacting storage', () => {
 
     await compactInBackground(s);
     expect(s.rows('SELECT transmission_id FROM orders WHERE transmission_id IS NULL')).toHaveLength(0);
+  });
+
+  it('leaves results still to be sent, or stored in the last week, to Compact Storage', async () => {
+    const s = setup('hl7', 'roche-cobas-4800');
+    const recent = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
+    storeAsOldBuild(s, COBAS_4800_MESSAGE, '2025-08-17 04:00:00', '2025-08-17 04:00:02');
+    const [pending, fresh] = s.rows('SELECT id FROM orders ORDER BY id LIMIT 2').map(row => row.id);
+    s.database.prepare('UPDATE orders SET lims_sync_status = 0 WHERE id = ?').run(pending);
+    s.database.prepare('UPDATE orders SET added_on = ? WHERE id = ?').run(recent, fresh);
+
+    await compactInBackground(s);
+
+    expect(s.rows('SELECT id FROM orders WHERE transmission_id IS NULL ORDER BY id').map(row => row.id)).toEqual([pending, fresh]);
+    await s.processor.compactStorage('sqlite');
+    expect(s.rows('SELECT id FROM orders WHERE transmission_id IS NULL')).toHaveLength(0);
+  });
+
+  it('leaves results the result webhook has not delivered, once forwarding is set up', async () => {
+    const s = setup('hl7', 'roche-cobas-4800');
+    storeAsOldBuild(s, COBAS_4800_MESSAGE, '2025-08-17 04:00:00', '2025-08-17 04:00:02');
+    s.store.set('resultWebhook', { enabled: false });
+    s.database.prepare('UPDATE orders SET result_webhook_status = 1').run();
+    const [undelivered] = s.rows('SELECT id FROM orders ORDER BY id LIMIT 1').map(row => row.id);
+    s.database.prepare('UPDATE orders SET result_webhook_status = 0 WHERE id = ?').run(undelivered);
+
+    await compactInBackground(s);
+
+    expect(s.rows('SELECT id FROM orders WHERE transmission_id IS NULL').map(row => row.id)).toEqual([undelivered]);
+  });
+
+  it('asks for the database to be rewritten at the next start only when compacting freed real space', async () => {
+    const small = setup('hl7', 'roche-cobas-4800');
+    storeAsOldBuild(small, COBAS_4800_MESSAGE, '2025-08-17 04:00:00', '2025-08-17 04:00:02');
+    await compactInBackground(small);
+    expect(small.store.get('storageReclaimPending')).toBeUndefined();
+
+    const large = setup('hl7', 'roche-cobas-4800');
+    storeAsOldBuild(large, COBAS_4800_MESSAGE, '2025-08-17 04:00:00', '2025-08-17 04:00:02');
+    const threshold = (RawDataProcessorService as any).RECLAIM_MIN_CHARACTERS;
+    (RawDataProcessorService as any).RECLAIM_MIN_CHARACTERS = 1;
+    try {
+      await compactInBackground(large);
+    } finally {
+      (RawDataProcessorService as any).RECLAIM_MIN_CHARACTERS = threshold;
+    }
+    expect(large.store.get('storageReclaimPending')).toEqual({ sqlite: expect.any(String) });
   });
 
   it('waits for a run the operator started before compacting in the background', async () => {

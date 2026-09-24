@@ -40,6 +40,14 @@ export interface ApplicationLogCleanupPreview {
 }
 
 /** How much space results and raw data take in one database. */
+/** Which unlinked results the background compaction may change. */
+export interface SettledResults {
+  /** Only results stored before this time, as stored. */
+  storedBefore: string;
+  /** Also require the result webhook to have delivered it (SQLite only). */
+  webhookDelivered: boolean;
+}
+
 export interface StoreUsage {
   available: boolean;
   results: number;
@@ -1788,15 +1796,28 @@ export class DatabaseService {
    * storage may link to a transmission received at that time.
    */
   /** Compared again exactly once read: MySQL's usual collations ignore case. */
-  public async unlinkedResultsFor(store: RawDataStore, orderId: string, notBefore: string | null): Promise<any[]> {
-    const timeClause = notBefore ? ' AND (added_on IS NULL OR added_on >= ?)' : '';
+  public async unlinkedResultsFor(store: RawDataStore, orderId: string, notBefore: string | null, settled: SettledResults | null = null): Promise<any[]> {
+    let clauses = '';
+    const params: any[] = [orderId];
+    if (notBefore) {
+      clauses += ' AND (added_on IS NULL OR added_on >= ?)';
+      params.push(notBefore);
+    }
+    if (settled) {
+      // Only results already sent, and stored before the cut-off.
+      clauses += ' AND lims_sync_status <> 0 AND added_on < ?';
+      params.push(settled.storedBefore);
+      if (settled.webhookDelivered) {
+        clauses += ' AND result_webhook_status <> 0';
+      }
+    }
     return this.runOn(
       store,
       `SELECT id, order_id, test_id, test_type, results, results_as_sent, analysed_date_time, raw_text,
               LENGTH(raw_text) AS raw_text_length
        FROM orders
-       WHERE order_id = ? AND transmission_id IS NULL AND raw_text IS NOT NULL${timeClause}`,
-      notBefore ? [orderId, notBefore] : [orderId]
+       WHERE order_id = ? AND transmission_id IS NULL AND raw_text IS NOT NULL${clauses}`,
+      params
     ).then((rows: any[]) => rows.filter(row => String(row.order_id) === orderId));
   }
 

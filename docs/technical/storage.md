@@ -79,7 +79,14 @@ leaves `raw_text` whole. It then runs `VACUUM` on SQLite or
 
 The tool also compacts by itself (`scheduleAutomaticCompaction`), two minutes
 after it starts, once per database. It skips a database with no unlinked
-result that has `raw_text`. It does not run `VACUUM` or `OPTIMIZE`. A finished
+result that has `raw_text`. It changes only settled results: `lims_sync_status`
+not pending, `result_webhook_status` not pending once result forwarding has
+been saved (SQLite only), and `added_on` more than seven days ago. It does not
+run `VACUUM` or `OPTIMIZE` while running. When it removed at least 10 million
+characters from SQLite, it sets `storageReclaimPending`, and the main process
+runs `VACUUM` at the next start, after migrations and before it creates the
+window. The request is cleared before the rewrite, so a failed rewrite is
+logged and not repeated at every start. A finished
 run is recorded in the settings store under `storageCompacted`, keyed `sqlite`
 or `mysql:<host>:<port>/<database>`, and is not repeated. Settings export
 leaves this record out. Reprocessing, or Compact Storage pressed in Settings,
