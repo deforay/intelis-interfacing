@@ -82,7 +82,7 @@
                 <h2>System Configuration</h2>
               </div>
             </div>
-            <div class="card-body">
+            <div class="card-body form-grid-2">
               <div class="form-group">
                 <label for="settingsLabId">Testing Lab Code/ID</label>
                 <input id="settingsLabId" type="text" formControlName="labID" class="form-control" placeholder="Lab Code/ID" required>
@@ -121,7 +121,7 @@
                 <small class="help-text">How dates are shown on screen. Stored results and what the LIS receives are not changed.</small>
               </div>
 
-              <div class="form-group">
+              <div class="form-group span-2">
                 <label for="settingsSqlitePath">SQLite Database Path</label>
                 <div class="input-group">
                   <input id="settingsSqlitePath" type="text" class="form-control readonly" [value]="appPath" readonly>
