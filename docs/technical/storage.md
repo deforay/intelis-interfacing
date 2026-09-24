@@ -81,10 +81,11 @@ The tool also compacts by itself (`scheduleAutomaticCompaction`), two minutes
 after it starts, once per database. It skips a database with no unlinked
 result that has `raw_text`. It does not run `VACUUM` or `OPTIMIZE`. A finished
 run is recorded in the settings store under `storageCompacted`, keyed `sqlite`
-or `mysql:<host>:<port>/<database>`, and is not repeated. Reprocessing, or
-Compact Storage pressed in Settings, stops the automatic run first, because
-they share the Stop request. A stopped or failed run starts again at the next
-start.
+or `mysql:<host>:<port>/<database>`, and is not repeated. Settings export
+leaves this record out. Reprocessing, or Compact Storage pressed in Settings,
+stops the automatic run first, because they share the Stop request. The
+automatic run waits while either is running, rewrites included. A stopped or
+failed run starts again at the next start.
 
 ### `app_log`, `telemetry_events`, `usage_statistics_daily`, `versions`
 

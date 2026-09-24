@@ -432,6 +432,22 @@ describe('compacting storage', () => {
     expect(s.rows('SELECT transmission_id FROM orders WHERE transmission_id IS NULL')).toHaveLength(0);
   });
 
+  it('waits for a run the operator started before compacting in the background', async () => {
+    const s = setup('hl7', 'roche-cobas-4800');
+    storeAsOldBuild(s, COBAS_4800_MESSAGE, '2025-08-17 04:00:00', '2025-08-17 04:00:02');
+    const count = vi.spyOn(s.dbService, 'countUnlinkedResults');
+    let finishManualRun: () => void = () => {};
+    const manualRun = s.processor.holdingBackgroundCompaction(() => new Promise<void>(resolve => { finishManualRun = resolve; }));
+
+    s.processor.scheduleAutomaticCompaction(5);
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(count).not.toHaveBeenCalled();
+
+    finishManualRun();
+    await manualRun;
+    await vi.waitFor(() => expect(s.rows('SELECT id FROM orders WHERE transmission_id IS NULL')).toHaveLength(0));
+  });
+
   it('links each result to its transmission and keeps only its own segments', async () => {
     const s = setup('hl7', 'roche-cobas-4800');
     storeAsOldBuild(s, COBAS_4800_MESSAGE, '2025-08-17 04:00:00', '2025-08-17 04:00:02');

@@ -848,16 +848,19 @@ export class SettingsComponent implements OnInit, OnDestroy {
       if (confirmation?.response !== 1) return;
 
       const reports: CompactionReport[] = [];
-      for (const store of stores) {
-        const report = await this.rawDataProcessor.compactStorage(store, progress => {
-          this.compactionProgress = progress;
-        });
-        reports.push(report);
-        if (report.cancelled) break;
-        this.compactionProgress = null;
-        this.storageMessage = `Giving the freed space back to the disk (${store === 'mysql' ? 'MySQL' : 'this computer'})…`;
-        await this.databaseService.reclaimSpace(store);
-      }
+      // The background compaction waits until this run and its rewrites end.
+      await this.rawDataProcessor.holdingBackgroundCompaction(async () => {
+        for (const store of stores) {
+          const report = await this.rawDataProcessor.compactStorage(store, progress => {
+            this.compactionProgress = progress;
+          });
+          reports.push(report);
+          if (report.cancelled) break;
+          this.compactionProgress = null;
+          this.storageMessage = `Giving the freed space back to the disk (${store === 'mysql' ? 'MySQL' : 'this computer'})…`;
+          await this.databaseService.reclaimSpace(store);
+        }
+      });
 
       await this.refreshStorageUsage();
       this.storageMessage = reports.map(report => {
