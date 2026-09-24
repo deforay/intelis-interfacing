@@ -181,6 +181,11 @@ export class ElectronService {
     return this.ipcRenderer.invoke('sqlite3-wal-checkpoint');
   }
 
+  /** Rewrites the SQLite file without its free pages, so it shrinks. */
+  vacuumSqlite(): Promise<{ success: boolean }> {
+    return this.ipcRenderer.invoke('sqlite3-vacuum');
+  }
+
   // WHY: these are fire-and-forget. Without a catch, an IPC failure (main
   // process shutting down, window torn down mid-call) surfaces as an unhandled
   // rejection rather than a dropped log line.

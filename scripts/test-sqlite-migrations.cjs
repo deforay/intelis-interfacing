@@ -90,6 +90,13 @@ function testFreshInstallation(migrations, temporaryDirectory) {
     assert(orderColumns.some(column => column.name === 'results_as_sent' && column.notnull === 0));
     assert(rawDataColumns.some(column => column.name === 'instrument_id'));
     assert(rawDataColumns.some(column => column.name === 'mysql_inserted'));
+    assert(rawDataColumns.some(column => column.name === 'transmission_id'));
+    assert(rawDataColumns.some(column => column.name === 'sha256'));
+    assert(orderColumns.some(column => column.name === 'transmission_id'));
+    const rawDataIndexes = all(database, 'PRAGMA index_list(raw_data)');
+    assert(rawDataIndexes.some(index => index.name === 'idx_raw_data_transmission_id' && index.unique === 1));
+    assert(orderIndexes.some(index => index.name === 'idx_orders_transmission_id'));
+    assert(orderIndexes.some(index => index.name === 'idx_orders_order_id'));
     assert(appLogColumns.some(column => column.name === 'log_type'));
     assert(appLogColumns.some(column => column.name === 'mysql_inserted'));
     assert(appLogColumns.some(column => column.name === 'category'));

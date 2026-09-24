@@ -6,6 +6,8 @@ import { LoggingService } from './logging.service';
 import { Observable, Subject } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
 import { TelemetryEventInput } from '../interfaces/telemetry-event.interface';
+import { RawDataFilter, RawDataStore } from '../interfaces/raw-machine-data.interface';
+import { transmissionSha256 } from './transmission-fingerprint';
 import {
   IntelisActivityEvent,
   IntelisResultAcknowledgement,
@@ -34,6 +36,32 @@ export interface ApplicationLogCleanupPreview {
   retainedActiveDays: number;
   local: ApplicationLogStoreCleanupPreview;
   mysql: ApplicationLogStoreCleanupPreview;
+}
+
+/** How much space results and raw data take in one database. */
+export interface StoreUsage {
+  available: boolean;
+  results: number;
+  /** Bytes of raw text kept on results */
+  resultTextBytes: number;
+  /** Results that carry the identifier of the transmission they came from */
+  linkedResults: number;
+  transmissions: number;
+  transmissionBytes: number;
+  /** Size of the database file, SQLite only */
+  fileBytes: number | null;
+}
+
+/** A stored transmission, as read for display or reprocessing. */
+export interface StoredTransmission {
+  id: number;
+  store: RawDataStore;
+  data: string;
+  machine: string;
+  instrument_id: string | null;
+  added_on: any;
+  transmission_id: string | null;
+  sha256: string | null;
 }
 
 export interface ApplicationLogCleanupResult {
@@ -135,6 +163,7 @@ export class DatabaseService {
     'added_on',
     'notes',
     'ingestion_id',
+    'transmission_id',
   ];
   private static readonly SQLITE_ORDER_COLUMNS = [
     ...DatabaseService.MYSQL_ORDER_COLUMNS,
@@ -145,6 +174,8 @@ export class DatabaseService {
     'machine',
     'added_on',
     'instrument_id',
+    'transmission_id',
+    'sha256',
   ];
   private static readonly SQLITE_RAW_DATA_COLUMNS = [
     ...DatabaseService.MYSQL_RAW_DATA_COLUMNS,
@@ -557,6 +588,10 @@ export class DatabaseService {
     await this.ensureMysqlColumn('orders', 'results_as_sent', 'ALTER TABLE `orders` ADD COLUMN `results_as_sent` VARCHAR(255) NULL AFTER `results`');
     await this.ensureMysqlColumn('orders', 'ingestion_id', 'ALTER TABLE `orders` ADD COLUMN `ingestion_id` VARCHAR(36) NULL');
     await this.ensureMysqlIndex('orders', 'idx_orders_ingestion_id', 'CREATE UNIQUE INDEX `idx_orders_ingestion_id` ON `orders` (`ingestion_id`)');
+    await this.ensureMysqlColumn('orders', 'transmission_id', 'ALTER TABLE `orders` ADD COLUMN `transmission_id` VARCHAR(36) NULL');
+    await this.ensureMysqlColumn('raw_data', 'transmission_id', 'ALTER TABLE `raw_data` ADD COLUMN `transmission_id` VARCHAR(36) NULL');
+    await this.ensureMysqlColumn('raw_data', 'sha256', 'ALTER TABLE `raw_data` ADD COLUMN `sha256` CHAR(64) NULL');
+    await this.ensureMysqlIndex('raw_data', 'idx_raw_data_transmission_id', 'CREATE UNIQUE INDEX `idx_raw_data_transmission_id` ON `raw_data` (`transmission_id`)');
   }
 
   private async ensureMysqlColumn(tableName: string, columnName: string, alterSql: string): Promise<void> {
@@ -1534,28 +1569,299 @@ export class DatabaseService {
     }).catch(errorf);
   }
 
-  fetchrawData(success: any, errorf: any, searchParam = '') {
-    const that = this;
-    let recentRawDataQuery = 'SELECT * FROM `raw_data` ';
-
-    if (searchParam) {
-      const columns = [
-        'machine', 'instrument_id', 'added_on', 'data'
-      ];
-      const searchConditions = columns.map(col => `${col} LIKE '%${searchParam}%'`).join(' OR ');
-      recentRawDataQuery += ` WHERE ${searchConditions}`;
+  /**
+   * Where raw data is read from: MySQL when it is configured and answers,
+   * since it can hold history from before this installation, else SQLite.
+   */
+  public async rawDataStore(): Promise<RawDataStore> {
+    if (!this.mysqlPool) {
+      return 'sqlite';
     }
+    return new Promise(resolve => this.checkMysqlConnection(null, () => resolve('mysql'), () => resolve('sqlite')));
+  }
 
-    this.checkMysqlConnection(null, () => {
-      // MySQL connected
-      that.execQuery(recentRawDataQuery, null, success, errorf);
-    }, (err) => {
-      // MySQL connection failed, fallback to SQLite
-      console.error('MySQL connection error:', err);
-      that.execSqlite(recentRawDataQuery, null)
-        .then(results => success(results))
-        .catch(errorf);
-    });
+  private runOn(store: RawDataStore, sql: string, params: any[] = []): Promise<any> {
+    return store === 'mysql' ? this.execQueryPromise(sql, params) : this.execSqlite(sql, params);
+  }
+
+  /** The WHERE clause for a raw data filter, every value a parameter. */
+  private rawDataWhere(filter: RawDataFilter = {}): { sql: string; params: any[] } {
+    const clauses: string[] = [];
+    const params: any[] = [];
+    if (filter.instrumentId) {
+      clauses.push('instrument_id = ?');
+      params.push(filter.instrumentId);
+    }
+    if (filter.from) {
+      clauses.push('added_on >= ?');
+      params.push(`${filter.from} 00:00:00`);
+    }
+    if (filter.to) {
+      clauses.push('added_on < ?');
+      params.push(`${DatabaseService.dayAfter(filter.to)} 00:00:00`);
+    }
+    const search = (filter.search ?? '').trim();
+    if (search) {
+      const pattern = `%${search.replace(/[!%_]/g, character => `!${character}`)}%`;
+      clauses.push("(instrument_id LIKE ? ESCAPE '!' OR machine LIKE ? ESCAPE '!' OR added_on LIKE ? ESCAPE '!' OR data LIKE ? ESCAPE '!')");
+      params.push(pattern, pattern, pattern, pattern);
+    }
+    return { sql: clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '', params };
+  }
+
+  /** The day after a YYYY-MM-DD day, in the same form. */
+  static dayAfter(day: string): string {
+    const [year, month, date] = day.split('-').map(Number);
+    return new Date(Date.UTC(year, month - 1, date + 1)).toISOString().slice(0, 10);
+  }
+
+  /** One page of stored transmissions matching the filter, newest first. */
+  public async listRawData(filter: RawDataFilter, limit: number, offset: number): Promise<{ store: RawDataStore; rows: StoredTransmission[]; total: number }> {
+    const store = await this.rawDataStore();
+    const where = this.rawDataWhere(filter);
+    const [count] = await this.runOn(store, `SELECT COUNT(*) AS total FROM raw_data${where.sql}`, where.params);
+    const rows = await this.runOn(
+      store,
+      `SELECT id, data, machine, instrument_id, added_on, transmission_id, sha256
+       FROM raw_data${where.sql}
+       ORDER BY id DESC
+       LIMIT ? OFFSET ?`,
+      [...where.params, Math.trunc(limit), Math.trunc(offset)]
+    );
+    return { store, rows: rows.map((row: any) => ({ ...row, store })), total: Number(count?.total ?? 0) };
+  }
+
+  /** Every instrument that has stored raw data. */
+  public async listRawDataInstruments(store: RawDataStore): Promise<string[]> {
+    const rows = await this.runOn(
+      store,
+      'SELECT DISTINCT instrument_id FROM raw_data WHERE instrument_id IS NOT NULL ORDER BY instrument_id'
+    );
+    return rows.map((row: any) => String(row.instrument_id));
+  }
+
+  public async countRawData(store: RawDataStore, filter: RawDataFilter): Promise<number> {
+    const where = this.rawDataWhere(filter);
+    const [count] = await this.runOn(store, `SELECT COUNT(*) AS total FROM raw_data${where.sql}`, where.params);
+    return Number(count?.total ?? 0);
+  }
+
+  /**
+   * The next stored transmissions matching the filter after the given row,
+   * oldest first. Walking by id keeps a long run stable while new
+   * transmissions arrive.
+   */
+  public async nextRawDataBatch(
+    store: RawDataStore,
+    filter: RawDataFilter,
+    afterId: number,
+    limit: number,
+    order: 'asc' | 'desc' = 'asc'
+  ): Promise<StoredTransmission[]> {
+    const where = this.rawDataWhere(filter);
+    const idClause = order === 'asc' ? 'id > ?' : 'id < ?';
+    const sql = `SELECT id, data, machine, instrument_id, added_on, transmission_id, sha256
+       FROM raw_data${where.sql ? `${where.sql} AND ${idClause}` : ` WHERE ${idClause}`}
+       ORDER BY id ${order === 'asc' ? 'ASC' : 'DESC'}
+       LIMIT ?`;
+    const rows = await this.runOn(store, sql, [...where.params, afterId, Math.trunc(limit)]);
+    return rows.map((row: any) => ({ ...row, store }));
+  }
+
+  /**
+   * The identifier and fingerprint of a stored transmission, given to it
+   * now if it was stored before either existed. Returns the identifier.
+   */
+  public async ensureTransmissionIdentity(entry: StoredTransmission): Promise<string> {
+    if (entry.transmission_id) {
+      return entry.transmission_id;
+    }
+    await this.runOn(
+      entry.store,
+      'UPDATE raw_data SET transmission_id = ?, sha256 = COALESCE(sha256, ?) WHERE id = ? AND transmission_id IS NULL',
+      [uuidv4(), transmissionSha256(entry.data), entry.id]
+    );
+    // Read back: another run may have given it one first.
+    const [row] = await this.runOn(entry.store, 'SELECT transmission_id, sha256 FROM raw_data WHERE id = ?', [entry.id]);
+    if (!row?.transmission_id) {
+      throw new Error(`Could not identify stored transmission ${entry.id}`);
+    }
+    entry.transmission_id = row.transmission_id;
+    entry.sha256 = row.sha256;
+    return entry.transmission_id;
+  }
+
+  /** The stored transmission a result came from, looked for locally first. */
+  public async findTransmission(transmissionId: string): Promise<StoredTransmission | null> {
+    const sql = `SELECT id, data, machine, instrument_id, added_on, transmission_id, sha256
+       FROM raw_data WHERE transmission_id = ? LIMIT 1`;
+    const [local] = await this.execSqlite(sql, [transmissionId]);
+    if (local) {
+      return { ...local, store: 'sqlite' };
+    }
+    if (this.mysqlPool) {
+      try {
+        const [remote] = await this.execQueryPromise(sql, [transmissionId]);
+        if (remote) {
+          return { ...remote, store: 'mysql' };
+        }
+      } catch {
+        // An unreachable MySQL copy means the transmission is not found here.
+      }
+    }
+    return null;
+  }
+
+  /**
+   * The condition that a stored result is the one in `record`: same sample,
+   * test, value, unit, notes, status, operator and times, from the same
+   * instrument or from a row that never recorded its instrument. A value
+   * stored before results_as_sent existed is compared as stored. The sample
+   * ID is compared again exactly once read, since MySQL's usual collations
+   * ignore case and trailing spaces.
+   */
+  private static readonly IDENTICAL_RESULT_SQL = `SELECT order_id FROM orders
+    WHERE order_id = ?
+      AND (COALESCE(instrument_id, machine_used) = ? OR COALESCE(instrument_id, machine_used) IS NULL)
+      AND COALESCE(test_id, '') = COALESCE(?, '')
+      AND COALESCE(test_type, '') = COALESCE(?, '')
+      AND COALESCE(results, '') = COALESCE(?, '')
+      AND (COALESCE(results_as_sent, '') = COALESCE(?, '') OR results_as_sent IS NULL)
+      AND COALESCE(test_unit, '') = COALESCE(?, '')
+      AND COALESCE(notes, '') = COALESCE(?, '')
+      AND COALESCE(tested_by, '') = COALESCE(?, '')
+      AND COALESCE(analysed_date_time, '') = COALESCE(?, '')
+      AND COALESCE(specimen_date_time, '') = COALESCE(?, '')
+      AND COALESCE(authorised_date_time, '') = COALESCE(?, '')
+      AND COALESCE(result_accepted_date_time, '') = COALESCE(?, '')
+      AND result_status = ?`;
+
+  /** True when a result exactly like this one is already stored. */
+  public async findIdenticalResult(record: any): Promise<boolean> {
+    const params = [
+      record.order_id, record.instrument_id ?? record.machine_used ?? null, record.test_id ?? null, record.test_type ?? null,
+      record.results ?? null, record.results_as_sent ?? null, record.test_unit ?? null, record.notes ?? null,
+      record.tested_by ?? null, record.analysed_date_time ?? null, record.specimen_date_time ?? null,
+      record.authorised_date_time ?? null, record.result_accepted_date_time ?? null, Number(record.result_status ?? 0)
+    ];
+    return this.foundInEitherStore(DatabaseService.IDENTICAL_RESULT_SQL, params, record.order_id);
+  }
+
+  /** True when any result is already stored for this sample and test. */
+  public async hasEarlierResult(record: any): Promise<boolean> {
+    const sql = `SELECT order_id FROM orders
+      WHERE order_id = ?
+        AND (COALESCE(instrument_id, machine_used) = ? OR COALESCE(instrument_id, machine_used) IS NULL)
+        AND COALESCE(test_type, '') = COALESCE(?, '')`;
+    return this.foundInEitherStore(sql, [record.order_id, record.instrument_id ?? record.machine_used ?? null, record.test_type ?? null], record.order_id);
+  }
+
+  private async foundInEitherStore(sql: string, params: any[], orderId: string): Promise<boolean> {
+    const sameSample = (rows: any[]) => rows.some(row => String(row.order_id) === String(orderId));
+    if (sameSample(await this.execSqlite(sql, params))) {
+      return true;
+    }
+    // MySQL can hold results from before this installation's SQLite.
+    if (this.mysqlPool) {
+      try {
+        return sameSample(await this.execQueryPromise(sql, params));
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Results with the given sample ID that do not yet carry a transmission
+   * identifier, stored no earlier than `notBefore`: the rows compacting
+   * storage may link to a transmission received at that time.
+   */
+  /** Compared again exactly once read: MySQL's usual collations ignore case. */
+  public async unlinkedResultsFor(store: RawDataStore, orderId: string, notBefore: string | null): Promise<any[]> {
+    const timeClause = notBefore ? ' AND (added_on IS NULL OR added_on >= ?)' : '';
+    return this.runOn(
+      store,
+      `SELECT id, order_id, test_id, test_type, results, results_as_sent, analysed_date_time, raw_text,
+              LENGTH(raw_text) AS raw_text_length
+       FROM orders
+       WHERE order_id = ? AND transmission_id IS NULL AND raw_text IS NOT NULL${timeClause}`,
+      notBefore ? [orderId, notBefore] : [orderId]
+    ).then((rows: any[]) => rows.filter(row => String(row.order_id) === orderId));
+  }
+
+  /**
+   * Links a result to the transmission it came from and keeps only the
+   * records it was read from. Changes nothing if the row was linked or its
+   * raw text changed since it was read.
+   * @param previousLength LENGTH(raw_text) as this database reported it
+   * when the row was read (characters in SQLite, bytes in MySQL)
+   */
+  public async linkResultToTransmission(
+    store: RawDataStore,
+    id: number,
+    transmissionId: string,
+    rawText: string,
+    previousLength: number
+  ): Promise<boolean> {
+    const result = await this.runOn(
+      store,
+      `UPDATE orders SET transmission_id = ?, raw_text = ?
+       WHERE id = ? AND transmission_id IS NULL AND LENGTH(raw_text) = ?`,
+      [transmissionId, rawText, id, previousLength]
+    );
+    return Number(result?.changes ?? result?.affectedRows ?? 0) > 0;
+  }
+
+  public async storageUsage(): Promise<{ sqlite: StoreUsage; mysql: StoreUsage }> {
+    const sqlite = await this.storeUsage('sqlite');
+    try {
+      const appPath = this.store?.get('appPath');
+      sqlite.fileBytes = appPath ? Number(this.electronService.fs.statSync(appPath).size) : null;
+    } catch {
+      sqlite.fileBytes = null;
+    }
+    let mysql: StoreUsage = {
+      available: false, results: 0, resultTextBytes: 0, linkedResults: 0, transmissions: 0, transmissionBytes: 0, fileBytes: null
+    };
+    if (this.mysqlPool) {
+      try {
+        mysql = await this.storeUsage('mysql');
+      } catch {
+        // Space in the optional MySQL copy is reported as unavailable.
+      }
+    }
+    return { sqlite, mysql };
+  }
+
+  private async storeUsage(store: RawDataStore): Promise<StoreUsage> {
+    const [orders] = await this.runOn(store, `SELECT COUNT(*) AS results,
+        COALESCE(SUM(LENGTH(raw_text)), 0) AS text_bytes,
+        COALESCE(SUM(CASE WHEN transmission_id IS NULL THEN 0 ELSE 1 END), 0) AS linked
+      FROM orders`);
+    const [raw] = await this.runOn(store, `SELECT COUNT(*) AS transmissions, COALESCE(SUM(LENGTH(data)), 0) AS bytes FROM raw_data`);
+    return {
+      available: true,
+      results: Number(orders?.results ?? 0),
+      resultTextBytes: Number(orders?.text_bytes ?? 0),
+      linkedResults: Number(orders?.linked ?? 0),
+      transmissions: Number(raw?.transmissions ?? 0),
+      transmissionBytes: Number(raw?.bytes ?? 0),
+      fileBytes: null
+    };
+  }
+
+  /**
+   * Gives back to the disk the space freed inside a database: SQLite keeps
+   * freed pages in its file until VACUUM, MySQL in its tablespace until the
+   * table is rebuilt.
+   */
+  public async reclaimSpace(store: RawDataStore): Promise<void> {
+    if (store === 'sqlite') {
+      await this.electronService.vacuumSqlite();
+    } else {
+      await this.execQueryPromise('OPTIMIZE TABLE `orders`', []);
+    }
   }
 
   fetchRecentResults(searchParam: string = ''): Observable<any[]> {
@@ -1714,7 +2020,13 @@ export class DatabaseService {
   // In database.service.ts, update the recordRawData method:
 
   recordRawData(data, success, errorf) {
-    const rawData = { ...data };
+    // Every transmission is stored with an identifier, the same in SQLite and
+    // MySQL, and a fingerprint of its bytes.
+    const rawData = {
+      ...data,
+      transmission_id: data.transmission_id || uuidv4(),
+      sha256: data.sha256 || transmissionSha256(data.data),
+    };
 
     const handleSQLiteInsert = (mysqlInserted: boolean) => {
       const sqliteRecord = this.filterRecordColumns({
@@ -1731,7 +2043,7 @@ export class DatabaseService {
       // MySQL connected
       const mysqlRecord = this.filterRecordColumns(rawData, DatabaseService.MYSQL_RAW_DATA_COLUMNS);
       const mysqlInsert = this.buildInsertQuery('raw_data', mysqlRecord);
-      this.execQuery(mysqlInsert.query, mysqlInsert.values,
+      this.execQuery(`${mysqlInsert.query} ON DUPLICATE KEY UPDATE transmission_id = VALUES(transmission_id)`, mysqlInsert.values,
         () => handleSQLiteInsert(true),
         (mysqlError) => {
           handleSQLiteInsert(false);
@@ -1764,15 +2076,25 @@ export class DatabaseService {
 
   private processResyncRawDataRecords(records: any[], success: any, errorf: any) {
     records.forEach((record: any) => {
-      const mysqlRecord = this.filterRecordColumns(record, DatabaseService.MYSQL_RAW_DATA_COLUMNS);
-      const mysqlInsert = this.buildInsertQuery('raw_data', mysqlRecord);
-
-      this.execQuery(mysqlInsert.query, mysqlInsert.values,
-        () => this.updateSQLiteAfterMySQLInsertRawData(record),
-        (mysqlError: any) => {
-          this.logCriticalDatabaseIssue(`Error resyncing raw_data ${record.id} to MySQL: ${mysqlError?.message ?? mysqlError}`, 'database', record.instrument_id);
-        }
-      );
+      // A transmission stored before identifiers existed is given one here,
+      // so both copies carry the same identifier.
+      this.ensureTransmissionIdentity({ ...record, store: 'sqlite' })
+        .then(transmissionId => {
+          const mysqlRecord = this.filterRecordColumns(
+            { ...record, transmission_id: transmissionId, sha256: record.sha256 || transmissionSha256(record.data) },
+            DatabaseService.MYSQL_RAW_DATA_COLUMNS
+          );
+          const mysqlInsert = this.buildInsertQuery('raw_data', mysqlRecord);
+          this.execQuery(`${mysqlInsert.query} ON DUPLICATE KEY UPDATE transmission_id = VALUES(transmission_id)`, mysqlInsert.values,
+            () => this.updateSQLiteAfterMySQLInsertRawData(record),
+            (mysqlError: any) => {
+              this.logCriticalDatabaseIssue(`Error resyncing raw_data ${record.id} to MySQL: ${mysqlError?.message ?? mysqlError}`, 'database', record.instrument_id);
+            }
+          );
+        })
+        .catch((error: any) => {
+          this.logCriticalDatabaseIssue(`Error resyncing raw_data ${record.id} to MySQL: ${error?.message ?? error}`, 'database', record.instrument_id);
+        });
     });
 
     success('Raw data resync process completed.');

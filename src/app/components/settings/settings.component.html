@@ -988,6 +988,69 @@
             </div>
           </div>
 
+          <div class="config-card housekeeping-card">
+            <div class="card-header">
+              <div class="header-content">
+                <i class="fas fa-database"></i>
+                <h2>Storage</h2>
+              </div>
+            </div>
+            <div class="card-body">
+              <p class="help-text">
+                Results stored before this version each keep a copy of their whole transmission. Those copies fill
+                the database. Compact Storage links each of these results to its stored transmission and keeps only
+                the result's own records. A result whose transmission is not stored keeps its copy. Compact Storage
+                never changes or removes a stored transmission.
+              </p>
+              <table class="storage-usage" *ngIf="storageUsage">
+                <tr>
+                  <th></th>
+                  <th>Results</th>
+                  <th>Linked</th>
+                  <th>Text on results</th>
+                  <th>Transmissions</th>
+                  <th>Database file</th>
+                </tr>
+                <tr>
+                  <td>This computer</td>
+                  <td>{{ storageUsage.sqlite.results | number }}</td>
+                  <td>{{ storageUsage.sqlite.linkedResults | number }}</td>
+                  <td>{{ formatBytes(storageUsage.sqlite.resultTextBytes) }}</td>
+                  <td>{{ storageUsage.sqlite.transmissions | number }} ({{ formatBytes(storageUsage.sqlite.transmissionBytes) }})</td>
+                  <td>{{ formatBytes(storageUsage.sqlite.fileBytes) }}</td>
+                </tr>
+                <tr *ngIf="storageUsage.mysql.available">
+                  <td>MySQL</td>
+                  <td>{{ storageUsage.mysql.results | number }}</td>
+                  <td>{{ storageUsage.mysql.linkedResults | number }}</td>
+                  <td>{{ formatBytes(storageUsage.mysql.resultTextBytes) }}</td>
+                  <td>{{ storageUsage.mysql.transmissions | number }} ({{ formatBytes(storageUsage.mysql.transmissionBytes) }})</td>
+                  <td>—</td>
+                </tr>
+              </table>
+              <div class="storage-actions">
+                <button type="button" class="btn btn-outline-primary" [disabled]="storageBusy" (click)="refreshStorageUsage()">
+                  <i class="fas fa-chart-pie"></i>
+                  <span>Show Storage Use</span>
+                </button>
+                <button type="button" class="btn btn-outline-primary" [disabled]="storageBusy" (click)="reviewStorageCompaction()">
+                  <i class="fas" [ngClass]="storageBusy ? 'fa-spinner fa-spin' : 'fa-compress-alt'"></i>
+                  <span>{{ storageBusy ? 'Compacting…' : 'Compact Storage' }}</span>
+                </button>
+                <button type="button" class="btn btn-danger" *ngIf="compactionProgress" (click)="stopStorageCompaction()">
+                  <i class="fas fa-stop"></i>
+                  <span>Stop</span>
+                </button>
+              </div>
+              <p class="housekeeping-status" *ngIf="compactionProgress">
+                {{ compactionProgress.store === 'mysql' ? 'MySQL' : 'This computer' }}: read
+                {{ compactionProgress.transmissionsRead | number }} of {{ compactionProgress.totalTransmissions | number }}
+                transmissions, {{ compactionProgress.linkedResults | number }} results linked.
+              </p>
+              <p class="housekeeping-status" *ngIf="storageMessage">{{ storageMessage }}</p>
+            </div>
+          </div>
+
           <div class="config-card troubleshooting-card">
             <div class="card-header">
               <div class="header-content">

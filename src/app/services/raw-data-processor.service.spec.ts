@@ -16,10 +16,7 @@ describe('RawDataProcessorService', () => {
     };
     const instrumentInterface = {
       hl7Helper: { unwrapMLLPBlock: vi.fn((block: string) => block) },
-      processHL7Data: vi.fn().mockResolvedValue([true]),
-      processHL7DataAlinity: vi.fn().mockResolvedValue([true]),
-      processHL7DataRoche5800: vi.fn().mockResolvedValue([true]),
-      processHL7DataRoche68008800: vi.fn().mockResolvedValue([true])
+      processHL7Message: vi.fn().mockResolvedValue([true])
     };
     const service = new RawDataProcessorService(
       utilities as any,
@@ -40,10 +37,10 @@ describe('RawDataProcessorService', () => {
       data: rawData
     }]);
 
-    expect(result).toEqual({ success: 1, failed: 0 });
-    expect(instrumentInterface.processHL7Data).toHaveBeenCalledOnce();
-    expect(instrumentInterface.processHL7Data.mock.calls[0][0].instrumentId).toBe('ANALYZER-1');
-    expect(instrumentInterface.processHL7Data.mock.calls[0][1]).toBe(rawData);
+    expect(result).toMatchObject({ success: 1, failed: 0 });
+    expect(instrumentInterface.processHL7Message).toHaveBeenCalledOnce();
+    expect(instrumentInterface.processHL7Message.mock.calls[0][0].instrumentId).toBe('ANALYZER-1');
+    expect(instrumentInterface.processHL7Message.mock.calls[0][1]).toBe(rawData);
   });
 
   it('refuses to reprocess data when no instrument profile matches', async () => {
@@ -55,13 +52,13 @@ describe('RawDataProcessorService', () => {
       data: 'MSH|^~\\&|UNKNOWN|LAB001|LIS|LAB001|20260714113000||OUL^R22|MSG-002|P|2.5.1'
     }]);
 
-    expect(result).toEqual({ success: 0, failed: 1 });
-    expect(instrumentInterface.processHL7Data).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ success: 0, failed: 1 });
+    expect(instrumentInterface.processHL7Message).not.toHaveBeenCalled();
   });
 
   it('reports failure when parsing produces no persisted results', async () => {
     const { service, instrumentInterface } = createService();
-    instrumentInterface.processHL7Data.mockResolvedValue([]);
+    instrumentInterface.processHL7Message.mockResolvedValue([]);
 
     const result = await service.reprocessRawData([{
       id: 3,
@@ -69,12 +66,12 @@ describe('RawDataProcessorService', () => {
       data: 'MSH|^~\\&|ANALYZER|LAB001|LIS|LAB001|20260714113000||OUL^R22|MSG-003|P|2.5.1'
     }]);
 
-    expect(result).toEqual({ success: 0, failed: 1 });
+    expect(result).toMatchObject({ success: 0, failed: 1 });
   });
 
   it('reports failure when a reprocessed result cannot be persisted', async () => {
     const { service, instrumentInterface } = createService();
-    instrumentInterface.processHL7Data.mockResolvedValue([false]);
+    instrumentInterface.processHL7Message.mockResolvedValue([false]);
 
     const result = await service.reprocessRawData([{
       id: 4,
@@ -82,6 +79,6 @@ describe('RawDataProcessorService', () => {
       data: 'MSH|^~\\&|ANALYZER|LAB001|LIS|LAB001|20260714113000||OUL^R22|MSG-004|P|2.5.1'
     }]);
 
-    expect(result).toEqual({ success: 0, failed: 1 });
+    expect(result).toMatchObject({ success: 0, failed: 1 });
   });
 });

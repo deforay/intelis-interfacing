@@ -33,7 +33,9 @@ The same shape in SQLite and, when configured, MySQL.
 | `result_status` | `1` final, `0` not |
 | `lims_sync_status` | `0` pending, `1` synced, `2` failed |
 | `result_webhook_status` | Result forwarding only: `0` pending, `1` delivered, `2` not queued. Local to SQLite. See [result webhook](result-webhook.md). |
-| `raw_text` | The records this row was parsed from |
+| `raw_text` | The result's own records. For ASTM: the message header, the patient record the order follows, and the order with the records after it. For HL7: the message header and the specimen's segments, or the whole message when it cannot be split by specimen. Before 4.8.0: the whole message or read buffer. |
+| `transmission_id` | The `raw_data.transmission_id` of the transmission the row was read from. `NULL` on rows stored before 4.8.0 until **Compact Storage** links them. |
+| `repeated` | `1` when reprocessing stored the row beside a different result for the same sample and test |
 | `notes` | Comment records, e.g. an analyzer's explanation of a failed run |
 
 ### `raw_data` — one row per transmission
@@ -42,6 +44,38 @@ What arrived, before it was understood. This is what makes a bad parse
 recoverable: `raw-data-processor.service.ts` re-derives results from it without
 asking the analyzer for anything. Keep it verbatim, or a defect found later
 cannot be undone.
+
+| Column | Notes |
+|--------|-------|
+| `data` | The transmission as received |
+| `transmission_id` | A unique UUID, given when the transmission is stored. It is the same in SQLite and MySQL, where the row ids differ. A transmission stored before 4.8.0 gets one when it is first reprocessed, compacted or copied to MySQL. If MySQL already held a copy, each database gives its copy a different UUID. Results point to the UUID in their own database. |
+| `sha256` | SHA-256 of `data` as UTF-8, taken when it is stored. The console's original-data view checks it. |
+
+The transmission is kept once. Its results point to it by `transmission_id`.
+Nothing in the tool changes or deletes a `raw_data` row. Compacting only fills
+in `transmission_id` and `sha256` where they are missing.
+
+### Reprocessing and compacting
+
+Reprocessing (`RawDataProcessorService.reprocessRawData`, `reprocessMatching`)
+reads transmissions again. It stores a result only when neither database holds
+an identical one. `DatabaseService.findIdenticalResult` compares the sample,
+instrument, test, value, value as sent, unit, notes, operator, times and
+status. The sample ID must match exactly, case included. Reprocessing checks
+every result of a transmission before it stores any of them, then stores them
+one at a time. A stored result links to its transmission. Bulk runs walk
+`raw_data` by id in batches, up to the newest matching id when the run starts.
+
+Compacting (`RawDataProcessorService.compactStorage`) walks each database's
+`raw_data` newest first. For each transmission, it reads the results with the
+current parser and does not save them. For each sample ID, it takes the
+unlinked `orders` rows stored no earlier than five minutes before the
+transmission. It links a row only when every record of the row's `raw_text`
+appears whole and in order in the transmission. `recordsOf` sets aside
+framing, frame numbers and checksums for this comparison. It replaces
+`raw_text` only when exactly one parsed run matches the row. Otherwise it
+leaves `raw_text` whole. It then runs `VACUUM` on SQLite or
+`OPTIMIZE TABLE orders` on MySQL.
 
 ### `app_log`, `telemetry_events`, `usage_statistics_daily`, `versions`
 

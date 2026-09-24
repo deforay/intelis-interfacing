@@ -996,6 +996,20 @@ $background-color: #f9fafb;
       max-width: 50px;
     }
 
+    .mat-column-original {
+      flex: 0 0 44px;
+      max-width: 44px;
+      justify-content: center;
+    }
+
+    .btn-original {
+      border: none;
+      background: transparent;
+      color: #1976d2;
+      cursor: pointer;
+      padding: 0.25rem;
+    }
+
 
     // Columns share the width instead of each holding a fixed one, so every
     // column, the sync status included, fits a common laptop screen. The

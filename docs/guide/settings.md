@@ -103,8 +103,10 @@ replaced, so no rule can make a failed run look like a result.
 
 The result as read before any rule is always kept beside the stored one, and
 the raw data never changes. After changing a rule, reprocess older raw data to store
-earlier results the new way. Reprocessing adds new results rather than
-replacing the old ones.
+earlier results the new way. If the rule changes a result, reprocessing stores
+a new result beside the old one. If the rule leaves a result unchanged,
+reprocessing does not store it again. See
+[raw data and recovery](raw-data.md#reprocessing).
 
 !!! note "Rules you may already have"
 

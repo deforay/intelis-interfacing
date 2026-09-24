@@ -2,24 +2,64 @@ import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { ElectronStoreService } from './electron-store.service';
 import { UtilitiesService } from './utilities.service';
-import { InstrumentInterfaceService } from './instrument-interface.service';
+import { InstrumentInterfaceService, ResultSaveOptions, ResultSaveStats } from './instrument-interface.service';
 import { InstrumentConnectionStack } from '../interfaces/instrument-connections.interface';
+import { RawDataFilter, RawDataStore } from '../interfaces/raw-machine-data.interface';
 import { effectiveResultRules } from '../../../shared/result-rules';
+
+export interface ReprocessingStatus {
+  inProgress: boolean;
+  processedCount: number;
+  totalCount: number;
+  currentItem: string;
+  /** Transmissions every result of which was stored or already stored */
+  success: number;
+  failed: number;
+  errors: string[];
+  /** Results stored as new rows */
+  saved: number;
+  /** Results already stored exactly as read, so not stored again */
+  unchanged: number;
+  cancelled: boolean;
+}
+
+/** What compacting one database did. */
+export interface CompactionReport {
+  store: RawDataStore;
+  transmissions: number;
+  /** Transmissions not read because no instrument in Settings has their name */
+  skippedTransmissions: number;
+  /** Results now carrying the identifier of their transmission */
+  linkedResults: number;
+  /** Of those, results whose raw text was cut to their own records */
+  trimmedResults: number;
+  /** Characters of raw text removed from results */
+  charactersRemoved: number;
+  cancelled: boolean;
+}
+
+export interface CompactionProgress {
+  store: RawDataStore;
+  transmissionsRead: number;
+  totalTransmissions: number;
+  linkedResults: number;
+  trimmedResults: number;
+}
 
 @Injectable({
   providedIn: 'root'
 })
 export class RawDataProcessorService {
   private static readonly PERSISTENCE_TIMEOUT_MS = 60_000;
-  private reprocessingStatus = new BehaviorSubject<any>({
-    inProgress: false,
-    processedCount: 0,
-    totalCount: 0,
-    currentItem: '',
-    success: 0,
-    failed: 0,
-    errors: []
-  });
+  private static readonly BATCH_SIZE = 20;
+  // Results are stored after the transmission they came from, and the two
+  // are stamped by separate writes that can wait on MySQL; a result can
+  // even be stamped first. Rows this much older than a transmission are
+  // not linked to it.
+  private static readonly LINK_CLOCK_SKEW_SECONDS = 5 * 60;
+
+  private reprocessingStatus = new BehaviorSubject<ReprocessingStatus>(RawDataProcessorService.idleStatus());
+  private cancelRequested = false;
 
   private instrumentsSettings: any = null;
   private commonSettings: any = null;
@@ -31,96 +71,117 @@ export class RawDataProcessorService {
   ) {
     this.commonSettings = this.electronStoreService.get('commonConfig');
     this.instrumentsSettings = this.electronStoreService.get('instrumentsConfig');
-    console.log('Instrument settings loaded:', this.instrumentsSettings);
   }
 
-  getReprocessingStatus(): Observable<any> {
+  private static idleStatus(): ReprocessingStatus {
+    return {
+      inProgress: false,
+      processedCount: 0,
+      totalCount: 0,
+      currentItem: '',
+      success: 0,
+      failed: 0,
+      errors: [],
+      saved: 0,
+      unchanged: 0,
+      cancelled: false
+    };
+  }
+
+  getReprocessingStatus(): Observable<ReprocessingStatus> {
     return this.reprocessingStatus.asObservable();
   }
 
-  async reprocessRawData(rawDataEntries: any[]): Promise<any> {
+  /** Stops a running reprocess or compaction after the transmission in hand. */
+  cancel(): void {
+    this.cancelRequested = true;
+  }
+
+  /** Reprocesses the given stored transmissions, in the order given. */
+  async reprocessRawData(rawDataEntries: any[]): Promise<ReprocessingStatus> {
     if (!rawDataEntries || rawDataEntries.length === 0) {
-      return { success: 0, failed: 0 };
+      return RawDataProcessorService.idleStatus();
     }
+    const entries = [...rawDataEntries];
+    return this.runReprocessing(entries.length, async () => entries.splice(0, RawDataProcessorService.BATCH_SIZE));
+  }
 
-    this.reprocessingStatus.next({
-      inProgress: true,
-      processedCount: 0,
-      totalCount: rawDataEntries.length,
-      currentItem: 'Starting reprocessing...',
-      success: 0,
-      failed: 0,
-      errors: []
+  /**
+   * Reprocesses every stored transmission that matches the filter, oldest
+   * first, reading them a batch at a time so a long range never has to fit
+   * in memory. Transmissions that arrive while it runs are not included.
+   */
+  async reprocessMatching(store: RawDataStore, filter: RawDataFilter): Promise<ReprocessingStatus> {
+    const dbService = this.instrumentInterfaceService.dbService;
+    const total = await dbService.countRawData(store, filter);
+    if (total === 0) {
+      return RawDataProcessorService.idleStatus();
+    }
+    // The newest matching row when the run starts bounds it.
+    const [newest] = await dbService.nextRawDataBatch(store, filter, Number.MAX_SAFE_INTEGER, 1, 'desc');
+    const lastId = Number(newest?.id ?? 0);
+    let afterId = 0;
+    return this.runReprocessing(total, async () => {
+      const batch = (await dbService.nextRawDataBatch(store, filter, afterId, RawDataProcessorService.BATCH_SIZE))
+        .filter(entry => Number(entry.id) <= lastId);
+      if (batch.length > 0) {
+        afterId = Number(batch[batch.length - 1].id);
+      }
+      return batch;
     });
+  }
 
-    let successCount = 0;
-    let failedCount = 0;
-    const errors = [];
+  private async runReprocessing(totalCount: number, nextBatch: () => Promise<any[]>): Promise<ReprocessingStatus> {
+    this.cancelRequested = false;
+    const stats: ResultSaveStats = { saved: 0, unchanged: 0 };
+    const status: ReprocessingStatus = {
+      ...RawDataProcessorService.idleStatus(),
+      inProgress: true,
+      totalCount,
+      currentItem: 'Starting reprocessing...'
+    };
+    const publish = () => this.reprocessingStatus.next({ ...status, ...stats, errors: [...status.errors] });
+    publish();
 
     // Settings can change while the application runs (an instrument renamed,
     // its rules edited): reprocess with them as they are now.
     this.instrumentsSettings = this.electronStoreService.get('instrumentsConfig');
 
-    for (let i = 0; i < rawDataEntries.length; i++) {
-      const entry = rawDataEntries[i];
+    try {
+      for (let batch = await nextBatch(); batch.length > 0 && !this.cancelRequested; batch = await nextBatch()) {
+        for (const entry of batch) {
+          if (this.cancelRequested) {
+            break;
+          }
+          status.currentItem = `Processing ${status.processedCount + 1}/${totalCount} (${entry.instrument_id || entry.machine})`;
+          publish();
 
-      try {
-        this.reprocessingStatus.next({
-          inProgress: true,
-          processedCount: i,
-          totalCount: rawDataEntries.length,
-          currentItem: `Processing entry ${i + 1}/${rawDataEntries.length} (${entry.instrument_id || entry.machine})`,
-          success: successCount,
-          failed: failedCount,
-          errors: errors
-        });
-
-        const instrumentId = entry.instrument_id || entry.machine;
-        const instrumentSettings = this.getInstrumentSettings(instrumentId);
-
-        if (!instrumentSettings) {
-          throw new Error(`No settings found for instrument: ${instrumentId}`);
+          try {
+            if (await this.reprocessEntry(entry, stats)) {
+              status.success++;
+            } else {
+              status.failed++;
+              status.errors.push(`Failed to reprocess raw data ID: ${entry.id}`);
+            }
+          } catch (error) {
+            status.failed++;
+            status.errors.push(`Error processing raw data ID ${entry.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          }
+          status.processedCount++;
+          publish();
         }
-
-        const success = await this.reprocessUsingInstrumentInterface(entry, instrumentSettings);
-
-        if (success) {
-          successCount++;
-        } else {
-          failedCount++;
-          errors.push(`Failed to reprocess raw data ID: ${entry.id}`);
-        }
-      } catch (error) {
-        failedCount++;
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        errors.push(`Error processing entry ${i + 1}: ${errorMessage}`);
       }
-
-      this.reprocessingStatus.next({
-        inProgress: true,
-        processedCount: i + 1,
-        totalCount: rawDataEntries.length,
-        currentItem: i < rawDataEntries.length - 1 ?
-          `Processed ${i + 1}/${rawDataEntries.length}` :
-          'Completing reprocessing...',
-        success: successCount,
-        failed: failedCount,
-        errors: errors
-      });
+    } catch (error) {
+      // A batch that cannot be read ends the run; what was done is reported.
+      status.errors.push(`Could not read raw data: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 
-    const finalStatus = {
-      inProgress: false,
-      processedCount: rawDataEntries.length,
-      totalCount: rawDataEntries.length,
-      currentItem: 'Reprocessing complete',
-      success: successCount,
-      failed: failedCount,
-      errors: errors
-    };
-    this.reprocessingStatus.next(finalStatus);
-
-    return { success: successCount, failed: failedCount };
+    status.inProgress = false;
+    status.cancelled = this.cancelRequested;
+    status.currentItem = status.cancelled ? 'Reprocessing stopped' : 'Reprocessing complete';
+    this.cancelRequested = false;
+    publish();
+    return { ...status, ...stats };
   }
 
   private getInstrumentSettings(analyzerMachineName: string): any {
@@ -153,27 +214,44 @@ export class RawDataProcessorService {
     return null;
   }
 
-  private async reprocessUsingInstrumentInterface(entry: any, instrumentSettings: any): Promise<boolean> {
+  private connectionFor(instrumentSettings: any): InstrumentConnectionStack {
+    const protocol = instrumentSettings.interfaceCommunicationProtocol;
+    return {
+      instrumentId: instrumentSettings.analyzerMachineName,
+      machineType: instrumentSettings.analyzerMachineType,
+      connectionProtocol: protocol,
+      labName: instrumentSettings.labName || 'Default Lab',
+      resultRules: effectiveResultRules(instrumentSettings, protocol),
+      transmissionStatusSubject: new BehaviorSubject<boolean>(false),
+      statusSubject: new BehaviorSubject<boolean>(true),
+      connectionAttemptStatusSubject: new BehaviorSubject<boolean>(true),
+      connectionSocket: null,
+      connectionServer: null,
+      errorOccurred: false,
+      reconnectAttempts: 0
+    };
+  }
+
+  private async reprocessEntry(entry: any, stats: ResultSaveStats): Promise<boolean> {
+    const instrumentId = entry.instrument_id || entry.machine;
+    const instrumentSettings = this.getInstrumentSettings(instrumentId);
+    if (!instrumentSettings) {
+      throw new Error(`No settings found for instrument: ${instrumentId}`);
+    }
+
+    // The results are linked to the transmission they are read from, which
+    // is given an identifier now if it was stored before identifiers.
+    const transmissionId = entry.store
+      ? await this.instrumentInterfaceService.dbService.ensureTransmissionIdentity(entry)
+      : entry.transmission_id ?? undefined;
+    return this.reprocessUsingInstrumentInterface(entry, instrumentSettings, { transmissionId, skipIdentical: true, stats });
+  }
+
+  private async reprocessUsingInstrumentInterface(entry: any, instrumentSettings: any, options: ResultSaveOptions): Promise<boolean> {
     try {
       const rawData = entry.data;
-      const machineType = instrumentSettings.analyzerMachineType;
       const protocol = instrumentSettings.interfaceCommunicationProtocol;
-
-      const instrumentConnectionData: InstrumentConnectionStack = {
-        instrumentId: instrumentSettings.analyzerMachineName,
-        machineType: machineType,
-        connectionProtocol: protocol,
-        labName: instrumentSettings.labName || 'Default Lab',
-        resultRules: effectiveResultRules(instrumentSettings, protocol),
-        transmissionStatusSubject: new BehaviorSubject<boolean>(false),
-        statusSubject: new BehaviorSubject<boolean>(true),
-        connectionAttemptStatusSubject: new BehaviorSubject<boolean>(true),
-        connectionSocket: null,
-        connectionServer: null,
-        errorOccurred: false,
-        reconnectAttempts: 0
-      };
-
+      const instrumentConnectionData = this.connectionFor(instrumentSettings);
 
       let persistenceResults: boolean[] = [];
       if (protocol === 'hl7') {
@@ -181,17 +259,9 @@ export class RawDataProcessorService {
         // way live processing does, or framing bytes end up in the stored
         // records and line breaks are split differently.
         const hl7Message = this.instrumentInterfaceService['hl7Helper'].unwrapMLLPBlock(rawData);
-        let persistencePromise: Promise<boolean[]>;
-        if (machineType === 'abbott-alinity-m') {
-          persistencePromise = this.instrumentInterfaceService.processHL7DataAlinity(instrumentConnectionData, hl7Message);
-        } else if (machineType === 'roche-cobas-5800') {
-          persistencePromise = this.instrumentInterfaceService.processHL7DataRoche5800(instrumentConnectionData, hl7Message);
-        } else if (machineType === 'roche-cobas-6800' || machineType === 'roche-cobas-8800') {
-          persistencePromise = this.instrumentInterfaceService.processHL7DataRoche68008800(instrumentConnectionData, hl7Message);
-        } else {
-          persistencePromise = this.instrumentInterfaceService.processHL7Data(instrumentConnectionData, hl7Message);
-        }
-        persistenceResults = await this.withPersistenceTimeout(persistencePromise);
+        persistenceResults = await this.withPersistenceTimeout(
+          this.instrumentInterfaceService.processHL7Message(instrumentConnectionData, hl7Message, options)
+        );
       } else if (protocol === 'astm-checksum' || protocol === 'astm-nonchecksum') {
         const astmData = this.utilsService.removeControlCharacters(rawData, protocol !== 'astm-nonchecksum');
         if (this.instrumentInterfaceService['astmHelper'].isHL7Transmission(astmData)) {
@@ -199,7 +269,7 @@ export class RawDataProcessorService {
           return false;
         }
         const parts = astmData.split(this.instrumentInterfaceService['astmHelper'].getStartMarker());
-        const persistencePromises: Promise<boolean>[] = [];
+        const sampleResults: any[] = [];
 
         // The same extraction live processing uses, so a stored transmission
         // yields exactly the results it yielded when it arrived.
@@ -214,11 +284,11 @@ export class RawDataProcessorService {
             continue;
           }
           unreadableOrders += extraction.unreadableOrders;
-          for (const sampleResult of extraction.results) {
-            persistencePromises.push(this.instrumentInterfaceService.saveASTMResult(sampleResult, instrumentConnectionData));
-          }
+          sampleResults.push(...extraction.results);
         }
-        persistenceResults = await this.withPersistenceTimeout(Promise.all(persistencePromises));
+        persistenceResults = await this.withPersistenceTimeout(
+          this.instrumentInterfaceService.saveASTMResults(sampleResults, instrumentConnectionData, options)
+        );
         // An order that could not be read is a result not recovered: the
         // entry has not been reprocessed, whatever else it yielded.
         if (unreadableOrders > 0) {
@@ -237,6 +307,205 @@ export class RawDataProcessorService {
       this.utilsService.logger('error', `InstrumentInterface reprocessing error: ${error}`, entry.instrument_id || entry.machine);
       return false;
     }
+  }
+
+  /**
+   * The results in a stored transmission, read the way reprocessing reads
+   * them but not saved, acknowledged, logged or counted, with the
+   * transmission as the parser saw it once its framing was taken off.
+   */
+  readTransmission(entry: any, instrumentSettings: any): { results: any[]; unframed: string } {
+    const protocol = instrumentSettings.interfaceCommunicationProtocol;
+    const connection = this.connectionFor(instrumentSettings);
+    if (protocol === 'hl7') {
+      const hl7Message = this.instrumentInterfaceService['hl7Helper'].unwrapMLLPBlock(entry.data);
+      return { results: this.instrumentInterfaceService.readHL7Results(connection, hl7Message, false), unframed: hl7Message };
+    }
+    const astmData = this.utilsService.removeControlCharacters(entry.data, protocol !== 'astm-nonchecksum');
+    const astmHelper = this.instrumentInterfaceService['astmHelper'];
+    if (astmHelper.isHL7Transmission(astmData)) {
+      return { results: [], unframed: astmData };
+    }
+    const results: any[] = [];
+    for (const part of astmData.split(astmHelper.getStartMarker())) {
+      if (part) {
+        results.push(...astmHelper.extractASTMResults(part.split(/<CR>/), part).results);
+      }
+    }
+    return { results, unframed: astmData };
+  }
+
+  /**
+   * Links stored results to the stored transmission they came from and cuts
+   * each result's raw text down to the records it was read from.
+   *
+   * A result is changed only when its raw text is proven to be held in a
+   * stored transmission: every record of it, framing aside, appears whole
+   * and in order in that transmission. A result whose transmission is not stored keeps its
+   * raw text whole. Transmissions themselves are never changed, apart from
+   * being given an identifier and fingerprint if they have none.
+   *
+   * Transmissions are walked newest first, and a result is linked only to
+   * one received no later than it was stored, so an analyzer sending the
+   * same message again does not draw earlier results to the later copy.
+   */
+  async compactStorage(store: RawDataStore, onProgress: (progress: CompactionProgress) => void = () => {}): Promise<CompactionReport> {
+    const dbService = this.instrumentInterfaceService.dbService;
+    this.cancelRequested = false;
+    this.instrumentsSettings = this.electronStoreService.get('instrumentsConfig');
+
+    const report: CompactionReport = {
+      store, transmissions: 0, skippedTransmissions: 0, linkedResults: 0, trimmedResults: 0, charactersRemoved: 0, cancelled: false
+    };
+    const totalTransmissions = await dbService.countRawData(store, {});
+    let beforeId = Number.MAX_SAFE_INTEGER;
+
+    while (!this.cancelRequested) {
+      const batch = await dbService.nextRawDataBatch(store, {}, beforeId, RawDataProcessorService.BATCH_SIZE, 'desc');
+      if (batch.length === 0) {
+        break;
+      }
+      beforeId = Number(batch[batch.length - 1].id);
+
+      for (const entry of batch) {
+        if (this.cancelRequested) {
+          break;
+        }
+        report.transmissions++;
+        await this.compactTransmission(store, entry, report);
+        onProgress({
+          store,
+          transmissionsRead: report.transmissions,
+          totalTransmissions,
+          linkedResults: report.linkedResults,
+          trimmedResults: report.trimmedResults
+        });
+      }
+    }
+
+    report.cancelled = this.cancelRequested;
+    this.cancelRequested = false;
+    return report;
+  }
+
+  private async compactTransmission(store: RawDataStore, entry: any, report: CompactionReport): Promise<void> {
+    const dbService = this.instrumentInterfaceService.dbService;
+    const instrumentSettings = this.getInstrumentSettings(entry.instrument_id || entry.machine);
+    if (!instrumentSettings) {
+      report.skippedTransmissions++;
+      return;
+    }
+
+    let read: { results: any[]; unframed: string };
+    try {
+      read = this.readTransmission(entry, instrumentSettings);
+    } catch {
+      // A transmission the parser cannot read proves nothing about any result.
+      return;
+    }
+    if (read.results.length === 0) {
+      return;
+    }
+
+    const transmissionId = await dbService.ensureTransmissionIdentity(entry);
+    const heldText = [entry.data, read.unframed].map(text => `\n${RawDataProcessorService.recordsOf(text)}\n`);
+    const notBefore = RawDataProcessorService.storedDateTimeMinus(entry.added_on, RawDataProcessorService.LINK_CLOCK_SKEW_SECONDS);
+
+    const resultsByOrder = new Map<string, any[]>();
+    for (const result of read.results) {
+      const orderId = result.order_id ?? '';
+      resultsByOrder.set(orderId, [...(resultsByOrder.get(orderId) ?? []), result]);
+    }
+
+    for (const [orderId, parsed] of resultsByOrder) {
+      if (!orderId) {
+        continue;
+      }
+      for (const row of await dbService.unlinkedResultsFor(store, orderId, notBefore)) {
+        const rowText = String(row.raw_text ?? '');
+        const records = RawDataProcessorService.recordsOf(rowText);
+        if (!records || !heldText.some(text => text.includes(`\n${records}\n`))) {
+          continue;
+        }
+        const ownRecords = RawDataProcessorService.ownRecords(parsed, row);
+        const rawText = ownRecords && ownRecords.length < rowText.length ? ownRecords : rowText;
+        if (await dbService.linkResultToTransmission(store, row.id, transmissionId, rawText, Number(row.raw_text_length))) {
+          report.linkedResults++;
+          if (rawText !== rowText) {
+            report.trimmedResults++;
+            report.charactersRemoved += rowText.length - rawText.length;
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * The records a stored result was read from, as the parser reads them now:
+   * the one result in the transmission for the same sample and test, or, when
+   * the sample ran more than once, the one that also has the same value, and
+   * then the same test identifier and time. Null when no single run is
+   * certain, so a run never takes another run's records.
+   */
+  private static ownRecords(parsed: any[], row: any): string | null {
+    const same = (a: unknown, b: unknown) => String(a ?? '') === String(b ?? '');
+    const narrowings: ((result: any) => boolean)[] = [
+      result => same(result.test_type, row.test_type),
+      result => same(result.results, row.results_as_sent ?? row.results),
+      result => same(result.test_id, row.test_id) && same(result.analysed_date_time, row.analysed_date_time)
+    ];
+    let candidates = parsed;
+    for (const narrowing of narrowings) {
+      candidates = candidates.filter(narrowing);
+      if (candidates.length <= 1) {
+        break;
+      }
+    }
+    const text = candidates.length === 1 ? candidates[0].raw_text : null;
+    return typeof text === 'string' && text.length > 0 ? text : null;
+  }
+
+  /**
+   * The records or segments in a text, one per line, with the framing around
+   * them taken out: control characters and the <CR>-style markers the ASTM
+   * reader writes for them, a frame's end and checksum (also where older
+   * builds left the checksum as a line of its own), the start marker older
+   * builds stored, and the frame number before a record. So a
+   * result's raw text, as any build stored it, can be looked for whole
+   * record by whole record in the transmission it came from.
+   */
+  static recordsOf(text: string): string {
+    return String(text ?? '')
+      .replace(/##START##/g, '\n')
+      .replace(/(?:<ETX>|<ETB>|[\x03\x17])[0-9A-Fa-f]{0,2}/g, '\n')
+      .replace(/<(?:CR|LF)>|[\r\n]/g, '\n')
+      .replace(/<(?:STX|EOT|ENQ|ACK|NAK)>/g, '')
+      .replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '')
+      .split('\n')
+      .map(record => record.trim().replace(/^\d(?=[A-Z][A-Z0-9]{0,2}\|)/, ''))
+      // A checksum older builds left behind as a line of its own
+      .filter(record => record && !/^[0-9A-Fa-f]{1,2}$/.test(record))
+      .join('\n');
+  }
+
+  /**
+   * A stored date and time, minus some seconds, written back the way the
+   * database stores it: "YYYY-MM-DD HH:MM:SS". MySQL hands DATETIME values
+   * over as Dates in local time, SQLite as text.
+   */
+  static storedDateTimeMinus(value: unknown, seconds: number): string | null {
+    const two = (n: number) => String(n).padStart(2, '0');
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      const d = new Date(value.getTime() - seconds * 1000);
+      return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`;
+    }
+    const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/.exec(String(value ?? ''));
+    if (!match) {
+      return null;
+    }
+    const [, year, month, day, hours, minutes, secs] = match.map(Number);
+    const d = new Date(Date.UTC(year, month - 1, day, hours, minutes, secs) - seconds * 1000);
+    return `${d.getUTCFullYear()}-${two(d.getUTCMonth() + 1)}-${two(d.getUTCDate())} ${two(d.getUTCHours())}:${two(d.getUTCMinutes())}:${two(d.getUTCSeconds())}`;
   }
 
   private withPersistenceTimeout(persistence: Promise<boolean[]>): Promise<boolean[]> {

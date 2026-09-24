@@ -20,6 +20,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { debounceTime, distinctUntilChanged, map } from 'rxjs/operators';
 import { LogDisplayService, LogEntry } from '../../services/log-display.service';
 import { BACKGROUND_INTERVAL_MS } from '../../constants/domain.constants';
+import { TransmissionDialogComponent } from '../transmission-dialog/transmission-dialog.component';
 
 export enum SelectType {
   single,
@@ -120,7 +121,8 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
     'analysed_date_time',
     'added_on',
     'lims_sync_status',
-    'lims_sync_date_time'
+    'lims_sync_date_time',
+    'original'
   ];
   /**
    * The columns actually shown: Notes only when a result on screen has one,
@@ -537,6 +539,12 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
         that.cdRef.detectChanges();
       });
     });
+  }
+
+  /** Opens the records a result was read from and the transmission they came in. */
+  showOriginal(row: any, event?: Event) {
+    event?.stopPropagation();
+    this.dialog.open(TransmissionDialogComponent, { data: row, width: '900px', maxWidth: '95vw' });
   }
 
   reSyncSelectedRecords() {

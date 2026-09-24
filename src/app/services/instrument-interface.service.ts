@@ -10,6 +10,28 @@ import { ElectronStoreService } from './electron-store.service';
 import { applyResultRules, effectiveResultRules, ResultRule } from '../../../shared/result-rules';
 import { BehaviorSubject, Observable, Subject, Subscription } from 'rxjs';
 import { COMMUNICATION_PROTOCOL, LIMS_SYNC_STATUS } from '../constants/domain.constants';
+import { v4 as uuidv4 } from 'uuid';
+
+/** Counts of what saving the results of a reprocessed transmission did. */
+export interface ResultSaveStats {
+  /** Stored as a new result */
+  saved: number;
+  /** Already stored exactly as read, so not stored again */
+  unchanged: number;
+}
+
+export interface ResultSaveOptions {
+  /** The stored transmission the results were read from */
+  transmissionId?: string;
+  /**
+   * Store a result only when it differs from every result already stored
+   * for the sample and test. Used when reprocessing: a result read the same
+   * way twice is the same result, and storing it again would send it to the
+   * LIS again.
+   */
+  skipIdentical?: boolean;
+  stats?: ResultSaveStats;
+}
 
 
 @Injectable({
@@ -145,340 +167,238 @@ export class InstrumentInterfaceService {
   }
 
   // HL7 processing methods
-  processHL7DataAlinity(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string): Promise<boolean[]> {
-    const that = this;
-    const persistencePromises: Promise<boolean>[] = [];
-    const message = that.hl7Helper.createHL7Message(rawHl7Text.trim());
-    const msgID = message.get('MSH.10')?.toString() ?? '';
-    const characterSet = message.get('MSH.18')?.toString() ?? 'UNICODE UTF-8';
-    const messageProfileIdentifier = message.get('MSH.21')?.toString() ?? '';
-    const hl7Version = message.get('MSH.12')?.toString() ?? '2.5.1';
 
-    that.hl7Helper.sendHL7ACK(instrumentConnectionData, msgID, characterSet, messageProfileIdentifier, hl7Version);
-
-    const hl7DataArray = rawHl7Text.split('MSH|');
-
-    hl7DataArray.forEach(function (rawText: string) {
-      if (rawText.trim() === '') { return; }
-
-      rawText = 'MSH|' + rawText.trim();
-      const message = that.hl7Helper.createHL7Message(rawText);
-
-      if (!that.hl7Helper.isValidHL7Message(message)) {
-        return;
-      }
-
-      that.hl7Helper.hl7Specimens(rawText, message).forEach(function ({ spm: singleSpm, obx, message }) {
-        // For Alinity, we typically use the first OBX for each SPM
-        let singleObx = obx[0];
-
-        // // Fall back to other OBX segments if needed
-        // if (!singleObx && obx.length > 0) {
-        //   singleObx = obx[0];
-        // }
-
-        // Safety check
-        if (!singleObx) {
-          that.utilitiesService.logger('error', 'No valid OBX segment found for sample in Alinity data', instrumentConnectionData.instrumentId);
-          that.recordProcessingFailure('result_parsing_failed', instrumentConnectionData);
-          return;
-        }
-
-        // Extract order and test IDs (Alinity uses SPM.3)
-        const ids = that.hl7Helper.extractHL7OrderAndTestIDs(singleSpm, message, 3);
-
-        const sampleResult: any = {
-          raw_text: rawText,
-          order_id: ids.order_id,
-          test_id: ids.test_id,
-          test_type: that.hl7Helper.extractHL7TestType(message)
-        };
-
-        // Process result value
-        //const resultOutcome = singleObx.get('OBX.5.1')?.toString() ?? '';
-        const resultData = that.hl7Helper.processHL7ResultValue(singleObx, that.hl7Helper.getHL7ResultStatusType(singleObx));
-        sampleResult.results = resultData.results;
-        sampleResult.test_unit = resultData.test_unit;
-        sampleResult.notes = resultData.notes;
-
-        // Extract tester info
-        sampleResult.tested_by = that.hl7Helper.extractHL7TesterInfo(singleObx, obx, message);
-
-        // Standard fields
-        sampleResult.result_status = 1;
-        sampleResult.lims_sync_status = LIMS_SYNC_STATUS.PENDING;
-
-        // Extract datetime fields
-        const dateTimeFields = that.hl7Helper.extractHL7DateTimeFields(singleObx);
-        sampleResult.analysed_date_time = dateTimeFields.analysed_date_time;
-        sampleResult.authorised_date_time = dateTimeFields.authorised_date_time;
-        sampleResult.result_accepted_date_time = dateTimeFields.result_accepted_date_time;
-
-        // Location information
-        sampleResult.test_location = instrumentConnectionData.labName;
-        sampleResult.machine_used = instrumentConnectionData.instrumentId;
-
-        persistencePromises.push(that.saveResult(sampleResult, instrumentConnectionData));
-      });
-    });
-    return Promise.all(persistencePromises);
+  /**
+   * Acknowledges, reads and saves one HL7 message, choosing the reader for
+   * the instrument's machine type. Live and reprocessed messages both come
+   * through here, so a stored message is read exactly as it was received.
+   */
+  processHL7Message(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string, options: ResultSaveOptions = {}): Promise<boolean[]> {
+    this.acknowledgeHL7(instrumentConnectionData, rawHl7Text);
+    return this.saveResults(this.readHL7Results(instrumentConnectionData, rawHl7Text), instrumentConnectionData, options);
   }
 
-  processHL7Data(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string): Promise<boolean[]> {
-    const that = this;
-    const persistencePromises: Promise<boolean>[] = [];
-    const message = that.hl7Helper.createHL7Message(rawHl7Text.trim());
-    const msgID = message.get('MSH.10')?.toString() ?? '';
-    const characterSet = message.get('MSH.18')?.toString() ?? 'UNICODE UTF-8';
-    const messageProfileIdentifier = message.get('MSH.21')?.toString() ?? '';
-    const hl7Version = message.get('MSH.12')?.toString() ?? '2.5.1';
-
-    that.hl7Helper.sendHL7ACK(instrumentConnectionData, msgID, characterSet, messageProfileIdentifier, hl7Version);
-
-    const hl7DataArray = rawHl7Text.split('MSH|');
-
-    hl7DataArray.forEach(function (rawText: string) {
-      if (rawText.trim() === '') { return; }
-
-      rawText = 'MSH|' + rawText.trim();
-      const message = that.hl7Helper.createHL7Message(rawText);
-
-      if (!that.hl7Helper.isValidHL7Message(message)) {
-        return;
-      }
-
-      that.hl7Helper.hl7Specimens(rawText, message).forEach(function ({ spm: singleSpm, obx, message, grouped }) {
-        // Get sample number and find appropriate OBX segment
-        let sampleNumber = singleSpm.get(1).toInteger();
-        if (Number.isNaN(sampleNumber)) {
-          sampleNumber = 1;
-        }
-
-        // In a specimen's own group its first result is its result; the
-        // sample number only indexes results across a whole message.
-        let singleObx = that.hl7Helper.findAppropriateHL7OBXSegment(obx, grouped ? 1 : sampleNumber);
-
-        // Safety check
-        if (!singleObx) {
-          that.utilitiesService.logger('error', 'No valid OBX segment found for sample ' + sampleNumber, instrumentConnectionData.instrumentId);
-          that.recordProcessingFailure('result_parsing_failed', instrumentConnectionData);
-          return;
-        }
-
-        // Extract order and test IDs
-        const ids = that.hl7Helper.extractHL7OrderAndTestIDs(singleSpm, message);
-
-        const sampleResult: any = {
-          raw_text: rawText,
-          order_id: ids.order_id,
-          test_id: ids.test_id,
-          test_type: that.hl7Helper.extractHL7TestType(message)
-        };
-
-        // Process result
-        const resultStatusType = that.hl7Helper.getHL7ResultStatusType(singleObx);
-        const resultData = that.hl7Helper.processHL7ResultValue(singleObx, resultStatusType);
-        sampleResult.results = resultData.results;
-        sampleResult.test_unit = resultData.test_unit;
-        sampleResult.notes = resultData.notes;
-
-        // Extract tester info
-        sampleResult.tested_by = that.hl7Helper.extractHL7TesterInfo(singleObx, obx, message);
-
-        // Standard fields
-        sampleResult.result_status = 1;
-        sampleResult.lims_sync_status = LIMS_SYNC_STATUS.PENDING;
-
-        // Extract datetime fields
-        const dateTimeFields = that.hl7Helper.extractHL7DateTimeFields(singleObx);
-        sampleResult.analysed_date_time = dateTimeFields.analysed_date_time;
-        sampleResult.authorised_date_time = dateTimeFields.authorised_date_time;
-        sampleResult.result_accepted_date_time = dateTimeFields.result_accepted_date_time;
-
-        // Location information
-        sampleResult.test_location = instrumentConnectionData.labName;
-        sampleResult.machine_used = instrumentConnectionData.instrumentId;
-
-        persistencePromises.push(that.saveResult(sampleResult, instrumentConnectionData));
-      });
-    });
-    return Promise.all(persistencePromises);
+  processHL7DataAlinity(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string, options: ResultSaveOptions = {}): Promise<boolean[]> {
+    this.acknowledgeHL7(instrumentConnectionData, rawHl7Text);
+    return this.saveResults(this.readHL7Alinity(instrumentConnectionData, rawHl7Text), instrumentConnectionData, options);
   }
 
-  processHL7DataRoche5800(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string): Promise<boolean[]> {
-    const that = this;
-    const persistencePromises: Promise<boolean>[] = [];
-    const message = that.hl7Helper.createHL7Message(rawHl7Text.trim());
-    const msgID = message.get('MSH.10')?.toString() ?? '';
-    const characterSet = message.get('MSH.18')?.toString() ?? 'UNICODE UTF-8';
-    const messageProfileIdentifier = message.get('MSH.21')?.toString() ?? '';
-    const hl7Version = message.get('MSH.12')?.toString() ?? '2.5.1';
-
-    that.hl7Helper.sendHL7ACK(instrumentConnectionData, msgID, characterSet, messageProfileIdentifier, hl7Version);
-
-    const hl7DataArray = rawHl7Text.split('MSH|');
-
-    hl7DataArray.forEach(function (rawText: string) {
-      if (rawText.trim() === '') { return; }
-
-      rawText = 'MSH|' + rawText.trim();
-      const message = that.hl7Helper.createHL7Message(rawText);
-
-      if (!that.hl7Helper.isValidHL7Message(message)) {
-        return;
-      }
-
-      that.hl7Helper.hl7Specimens(rawText, message).forEach(function ({ spm: singleSpm, obx, message, grouped }) {
-        // Get sample number and find appropriate OBX segment
-        let sampleNumber = singleSpm.get(1).toInteger();
-        if (Number.isNaN(sampleNumber)) {
-          sampleNumber = 1;
-        }
-
-        // In a specimen's own group its first result is its result; the
-        // sample number only indexes results across a whole message.
-        let singleObx = that.hl7Helper.findAppropriateHL7OBXSegment(obx, grouped ? 1 : sampleNumber);
-
-        // Safety check
-        if (!singleObx) {
-          that.utilitiesService.logger('error', 'No valid OBX segment found for sample ' + sampleNumber, instrumentConnectionData.instrumentId);
-          that.recordProcessingFailure('result_parsing_failed', instrumentConnectionData);
-          return;
-        }
-
-        // Extract order and test IDs
-        const ids = that.hl7Helper.extractHL7OrderAndTestIDs(singleSpm, message);
-
-        const sampleResult: any = {
-          raw_text: rawText,
-          order_id: ids.order_id,
-          test_id: ids.test_id,
-          test_type: that.hl7Helper.extractHL7TestType(message)
-        };
-
-        // Process result
-        const resultStatusType = that.hl7Helper.getHL7ResultStatusType(singleObx);
-        const resultData = that.hl7Helper.processHL7ResultValue(singleObx, resultStatusType);
-        sampleResult.results = resultData.results;
-        sampleResult.test_unit = resultData.test_unit;
-        sampleResult.notes = resultData.notes;
-
-        // Extract tester info
-        sampleResult.tested_by = that.hl7Helper.extractHL7TesterInfo(singleObx, obx, message);
-
-        // Standard fields
-        sampleResult.result_status = 1;
-        sampleResult.lims_sync_status = LIMS_SYNC_STATUS.PENDING;
-
-        // Extract datetime fields
-        const dateTimeFields = that.hl7Helper.extractHL7DateTimeFields(singleObx);
-        sampleResult.analysed_date_time = dateTimeFields.analysed_date_time;
-        sampleResult.authorised_date_time = dateTimeFields.authorised_date_time;
-        sampleResult.result_accepted_date_time = dateTimeFields.result_accepted_date_time;
-
-        // Location information
-        sampleResult.test_location = instrumentConnectionData.labName;
-        sampleResult.machine_used = instrumentConnectionData.instrumentId;
-
-        persistencePromises.push(that.saveResult(sampleResult, instrumentConnectionData));
-      });
-    });
-    return Promise.all(persistencePromises);
+  processHL7Data(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string, options: ResultSaveOptions = {}): Promise<boolean[]> {
+    this.acknowledgeHL7(instrumentConnectionData, rawHl7Text);
+    return this.saveResults(this.readHL7Generic(instrumentConnectionData, rawHl7Text), instrumentConnectionData, options);
   }
 
-  processHL7DataRoche68008800(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string): Promise<boolean[]> {
-    const that = this;
-    const persistencePromises: Promise<boolean>[] = [];
-    const message = that.hl7Helper.createHL7Message(rawHl7Text.trim());
+  processHL7DataRoche5800(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string, options: ResultSaveOptions = {}): Promise<boolean[]> {
+    this.acknowledgeHL7(instrumentConnectionData, rawHl7Text);
+    return this.saveResults(this.readHL7Generic(instrumentConnectionData, rawHl7Text), instrumentConnectionData, options);
+  }
+
+  processHL7DataRoche68008800(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string, options: ResultSaveOptions = {}): Promise<boolean[]> {
+    this.acknowledgeHL7(instrumentConnectionData, rawHl7Text);
+    return this.saveResults(this.readHL7Roche68008800(instrumentConnectionData, rawHl7Text), instrumentConnectionData, options);
+  }
+
+  /**
+   * The results in one HL7 message, read and not saved or acknowledged.
+   * @param report false to read quietly: nothing logged or counted as a
+   * failure, for looking at a stored message rather than receiving one
+   */
+  readHL7Results(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string, report = true): any[] {
+    switch (instrumentConnectionData.machineType) {
+      case 'abbott-alinity-m':
+        return this.readHL7Alinity(instrumentConnectionData, rawHl7Text, report);
+      case 'roche-cobas-6800':
+      case 'roche-cobas-8800':
+        return this.readHL7Roche68008800(instrumentConnectionData, rawHl7Text, report);
+      default:
+        // The cobas 5800 is read as any other HL7 analyzer.
+        return this.readHL7Generic(instrumentConnectionData, rawHl7Text, report);
+    }
+  }
+
+  private acknowledgeHL7(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string): void {
+    const message = this.hl7Helper.createHL7Message(rawHl7Text.trim());
     const msgID = message.get('MSH.10')?.toString() ?? '';
     const characterSet = message.get('MSH.18')?.toString() ?? 'UNICODE UTF-8';
     const messageProfileIdentifier = message.get('MSH.21')?.toString() ?? '';
     const hl7Version = message.get('MSH.12')?.toString() ?? '2.5.1';
 
-    that.hl7Helper.sendHL7ACK(instrumentConnectionData, msgID, characterSet, messageProfileIdentifier, hl7Version);
+    this.hl7Helper.sendHL7ACK(instrumentConnectionData, msgID, characterSet, messageProfileIdentifier, hl7Version);
+  }
 
-    const hl7DataArray = rawHl7Text.split('MSH|');
-
-    hl7DataArray.forEach(function (rawText: string) {
-      if (rawText.trim() === '') { return; }
+  /**
+   * Each specimen of each message in the text, with the segments it was read
+   * from. A message that cannot be parsed is reported and the others are
+   * still read.
+   */
+  private hl7SpecimensIn(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string, report: boolean): ReturnType<HL7HelperService['hl7Specimens']> {
+    const specimens: ReturnType<HL7HelperService['hl7Specimens']> = [];
+    for (let rawText of rawHl7Text.split('MSH|')) {
+      if (rawText.trim() === '') { continue; }
 
       rawText = 'MSH|' + rawText.trim();
-      const message = that.hl7Helper.createHL7Message(rawText);
+      try {
+        const message = this.hl7Helper.createHL7Message(rawText);
 
-      if (!that.hl7Helper.isValidHL7Message(message)) {
-        return;
+        if (!this.hl7Helper.isValidHL7Message(message)) {
+          continue;
+        }
+        specimens.push(...this.hl7Helper.hl7Specimens(rawText, message));
+      } catch (error) {
+        if (report) {
+          this.utilitiesService.logger('error', 'Failed to parse HL7 message: ' + error, instrumentConnectionData.instrumentId);
+          this.recordProcessingFailure('hl7_parse_failed', instrumentConnectionData);
+        }
+      }
+    }
+    return specimens;
+  }
+
+  /**
+   * Reads each specimen with `read`. A specimen that cannot be read is
+   * reported and skipped, so it does not take the results of the other
+   * specimens in the message with it.
+   */
+  private readEachSpecimen(
+    instrumentConnectionData: InstrumentConnectionStack,
+    rawHl7Text: string,
+    report: boolean,
+    read: (specimen: ReturnType<HL7HelperService['hl7Specimens']>[number]) => any | null
+  ): any[] {
+    const results: any[] = [];
+    for (const specimen of this.hl7SpecimensIn(instrumentConnectionData, rawHl7Text, report)) {
+      try {
+        const result = read(specimen);
+        if (result) {
+          results.push(result);
+        }
+      } catch (error) {
+        this.reportUnreadableSpecimen(instrumentConnectionData, 'Failed to read an HL7 specimen: ' + error, report);
+      }
+    }
+    return results;
+  }
+
+  private reportUnreadableSpecimen(instrumentConnectionData: InstrumentConnectionStack, message: string, report: boolean): void {
+    if (!report) {
+      return;
+    }
+    this.utilitiesService.logger('error', message, instrumentConnectionData.instrumentId);
+    this.recordProcessingFailure('result_parsing_failed', instrumentConnectionData);
+  }
+
+  /** The fields every HL7 reader fills the same way from the OBX it chose. */
+  private hl7SampleResult(
+    instrumentConnectionData: InstrumentConnectionStack,
+    specimen: { spm: any; obx: any[]; message: any; text: string },
+    singleObx: any,
+    ids: { order_id: string; test_id: string },
+    resultStatusType: string
+  ): any {
+    const sampleResult: any = {
+      raw_text: specimen.text,
+      order_id: ids.order_id,
+      test_id: ids.test_id,
+      test_type: this.hl7Helper.extractHL7TestType(specimen.message)
+    };
+
+    const resultData = this.hl7Helper.processHL7ResultValue(singleObx, resultStatusType);
+    sampleResult.results = resultData.results;
+    sampleResult.test_unit = resultData.test_unit;
+    sampleResult.notes = resultData.notes;
+
+    sampleResult.tested_by = this.hl7Helper.extractHL7TesterInfo(singleObx, specimen.obx, specimen.message);
+
+    sampleResult.result_status = 1;
+    sampleResult.lims_sync_status = LIMS_SYNC_STATUS.PENDING;
+
+    const dateTimeFields = this.hl7Helper.extractHL7DateTimeFields(singleObx);
+    sampleResult.analysed_date_time = dateTimeFields.analysed_date_time;
+    sampleResult.authorised_date_time = dateTimeFields.authorised_date_time;
+    sampleResult.result_accepted_date_time = dateTimeFields.result_accepted_date_time;
+
+    sampleResult.test_location = instrumentConnectionData.labName;
+    sampleResult.machine_used = instrumentConnectionData.instrumentId;
+    return sampleResult;
+  }
+
+  private readHL7Alinity(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string, report = true): any[] {
+    return this.readEachSpecimen(instrumentConnectionData, rawHl7Text, report, specimen => {
+      // For Alinity, the first OBX of each SPM is its result
+      const singleObx = specimen.obx[0];
+      if (!singleObx) {
+        this.reportUnreadableSpecimen(instrumentConnectionData, 'No valid OBX segment found for sample in Alinity data', report);
+        return null;
       }
 
-      that.hl7Helper.hl7Specimens(rawText, message).forEach(function ({ spm: singleSpm, obx: obxArray, message }) {
-        // For 6800/8800, look for OBX with OBX.4 = "1/2"
-        let resultOutcome = '';
-        let singleObx = null;
+      // Alinity sends the sample ID in SPM.3
+      const ids = this.hl7Helper.extractHL7OrderAndTestIDs(specimen.spm, specimen.message, 3);
+      return this.hl7SampleResult(
+        instrumentConnectionData, specimen, singleObx, ids, this.hl7Helper.getHL7ResultStatusType(singleObx)
+      );
+    });
+  }
 
-        // This specific logic for 6800/8800 looks for "1/2" in OBX.4
-        obxArray.forEach(function (obx: any) {
-          if (obx.get('OBX.4')?.toString() === '1/2') {
-            resultOutcome = obx.get('OBX.5.1')?.toString() ?? '';
-            singleObx = obx;
-            if (resultOutcome === 'Titer') {
-              singleObx = obxArray[0];
-              resultOutcome = obx.get('OBX.5.1')?.toString() ?? '';
-            }
+  private readHL7Generic(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string, report = true): any[] {
+    return this.readEachSpecimen(instrumentConnectionData, rawHl7Text, report, specimen => {
+      let sampleNumber = specimen.spm.get(1).toInteger();
+      if (Number.isNaN(sampleNumber)) {
+        sampleNumber = 1;
+      }
+
+      // In a specimen's own group its first result is its result; the
+      // sample number only indexes results across a whole message.
+      const singleObx = this.hl7Helper.findAppropriateHL7OBXSegment(specimen.obx, specimen.grouped ? 1 : sampleNumber);
+      if (!singleObx) {
+        this.reportUnreadableSpecimen(instrumentConnectionData, 'No valid OBX segment found for sample ' + sampleNumber, report);
+        return null;
+      }
+
+      const ids = this.hl7Helper.extractHL7OrderAndTestIDs(specimen.spm, specimen.message);
+      return this.hl7SampleResult(
+        instrumentConnectionData, specimen, singleObx, ids, this.hl7Helper.getHL7ResultStatusType(singleObx)
+      );
+    });
+  }
+
+  private readHL7Roche68008800(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string, report = true): any[] {
+    return this.readEachSpecimen(instrumentConnectionData, rawHl7Text, report, specimen => {
+      const obxArray = specimen.obx;
+      let singleObx = null;
+
+      // The result is the OBX with OBX.4 = "1/2"
+      obxArray.forEach(function (obx: any) {
+        if (obx.get('OBX.4')?.toString() === '1/2') {
+          singleObx = obx;
+          if ((obx.get('OBX.5.1')?.toString() ?? '') === 'Titer') {
+            singleObx = obxArray[0];
           }
-        });
-
-        // If no OBX segment with "1/2", fall back to first OBX
-        if (!singleObx && obxArray.length > 0) {
-          singleObx = obxArray[0];
-          resultOutcome = singleObx.get('OBX.5.1')?.toString() ?? '';
         }
-
-        // Safety check
-        if (!singleObx) {
-          that.utilitiesService.logger('error', 'No valid OBX segment found for Roche 6800/8800', instrumentConnectionData.instrumentId);
-          that.recordProcessingFailure('result_parsing_failed', instrumentConnectionData);
-          return;
-        }
-
-        // Extract order and test IDs
-        const ids = that.hl7Helper.extractHL7OrderAndTestIDs(singleSpm, message);
-
-        const sampleResult: any = {
-          raw_text: rawText,
-          order_id: ids.order_id,
-          test_id: ids.test_id,
-          test_type: that.hl7Helper.extractHL7TestType(message)
-        };
-
-        // Process result
-        const resultStatusType = that.hl7Helper.getHL7ResultStatusType(singleObx);
-        const resultData = that.hl7Helper.processHL7ResultValue(singleObx, resultStatusType);
-        sampleResult.results = resultData.results;
-        sampleResult.test_unit = resultData.test_unit;
-        sampleResult.notes = resultData.notes;
-
-        // Extract tester info
-        sampleResult.tested_by = that.hl7Helper.extractHL7TesterInfo(singleObx, obxArray, message);
-
-        // Standard fields
-        sampleResult.result_status = 1;
-        sampleResult.lims_sync_status = LIMS_SYNC_STATUS.PENDING;
-
-        // Extract datetime fields
-        const dateTimeFields = that.hl7Helper.extractHL7DateTimeFields(singleObx);
-        sampleResult.analysed_date_time = dateTimeFields.analysed_date_time;
-        sampleResult.authorised_date_time = dateTimeFields.authorised_date_time;
-        sampleResult.result_accepted_date_time = dateTimeFields.result_accepted_date_time;
-
-        // Location information
-        sampleResult.test_location = instrumentConnectionData.labName;
-        sampleResult.machine_used = instrumentConnectionData.instrumentId;
-
-        persistencePromises.push(that.saveResult(sampleResult, instrumentConnectionData));
       });
+
+      // If no OBX segment with "1/2", fall back to first OBX
+      if (!singleObx && obxArray.length > 0) {
+        singleObx = obxArray[0];
+      }
+
+      if (!singleObx) {
+        this.reportUnreadableSpecimen(instrumentConnectionData, 'No valid OBX segment found for Roche 6800/8800', report);
+        return null;
+      }
+
+      const ids = this.hl7Helper.extractHL7OrderAndTestIDs(specimen.spm, specimen.message);
+      return this.hl7SampleResult(
+        instrumentConnectionData, specimen, singleObx, ids, this.hl7Helper.getHL7ResultStatusType(singleObx)
+      );
     });
-    return Promise.all(persistencePromises);
   }
 
+  private saveResults(sampleResults: any[], instrumentConnectionData: InstrumentConnectionStack, options: ResultSaveOptions): Promise<boolean[]> {
+    if (options.skipIdentical) {
+      return this.saveCheckedResults(sampleResults, instrumentConnectionData, options);
+    }
+    return Promise.all(sampleResults.map(sampleResult => this.saveResult(sampleResult, instrumentConnectionData, options)));
+  }
 
   private receiveASTM(astmProtocolType: string, instrumentConnectionData: InstrumentConnectionStack, data: Buffer) {
     const that = this;
@@ -582,11 +502,13 @@ export class InstrumentInterfaceService {
       that.utilitiesService.logger('info', 'Received EOT. ASTM payload length: ' + rawDataPayload.length, instrumentConnectionData.instrumentId);
       that.utilitiesService.logger('info', 'Processing ' + astmProtocolType, instrumentConnectionData.instrumentId);
 
+      const transmissionId = uuidv4();
       if (rawDataPayload) {
         const rawData: RawMachineData = {
           data: rawDataPayload,
           machine: instrumentConnectionData.instrumentId,
-          instrument_id: instrumentConnectionData.instrumentId
+          instrument_id: instrumentConnectionData.instrumentId,
+          transmission_id: transmissionId
         };
 
         that.dbService.recordRawData(rawData, () => {
@@ -630,7 +552,7 @@ export class InstrumentInterfaceService {
       }
 
       for (const sampleResult of sampleResults) {
-        that.saveASTMResult(sampleResult, instrumentConnectionData);
+        that.saveASTMResult(sampleResult, instrumentConnectionData, { transmissionId });
       }
     } else {
       that.utilitiesService.logger('info', astmProtocolType.toUpperCase() + ' | Receiving....' + astmText, instrumentConnectionData.instrumentId);
@@ -717,10 +639,12 @@ export class InstrumentInterfaceService {
     that.utilitiesService.logger('info', 'Received File Separator Character. Ready to process HL7 data', instrumentConnectionData.instrumentId);
 
     for (const message of messages) {
+      const transmissionId = uuidv4();
       const rawData: RawMachineData = {
         data: message,
         machine: instrumentConnectionData.instrumentId,
-        instrument_id: instrumentConnectionData.instrumentId
+        instrument_id: instrumentConnectionData.instrumentId,
+        transmission_id: transmissionId
       };
       that.dbService.recordRawData(rawData, () => {
         that.utilitiesService.logger('success', 'Successfully saved raw HL7 data', instrumentConnectionData.instrumentId);
@@ -735,18 +659,7 @@ export class InstrumentInterfaceService {
       // this catches. They are not awaited: the promise each returns cannot
       // reject, because saveResult reports a failed save by resolving false.
       try {
-        if (instrumentConnectionData.machineType === 'abbott-alinity-m') {
-          that.processHL7DataAlinity(instrumentConnectionData, completeMessage);
-        }
-        else if (instrumentConnectionData.machineType === 'roche-cobas-5800') {
-          that.processHL7DataRoche5800(instrumentConnectionData, completeMessage);
-        }
-        else if (instrumentConnectionData.machineType === 'roche-cobas-6800') {
-          that.processHL7DataRoche68008800(instrumentConnectionData, completeMessage);
-        }
-        else {
-          that.processHL7Data(instrumentConnectionData, completeMessage);
-        }
+        that.processHL7Message(instrumentConnectionData, completeMessage, { transmissionId });
       } catch (error) {
         that.utilitiesService.logger('error', 'Failed to parse HL7 message: ' + error, instrumentConnectionData.instrumentId);
         that.recordProcessingFailure('hl7_parse_failed', instrumentConnectionData);
@@ -905,33 +818,104 @@ export class InstrumentInterfaceService {
     }
   }
 
-  private saveResult(sampleResult: any, instrumentConnectionData: InstrumentConnectionStack): Promise<boolean> {
-    const that = this;
+  private saveResult(sampleResult: any, instrumentConnectionData: InstrumentConnectionStack, options: ResultSaveOptions = {}): Promise<boolean> {
     if (!sampleResult) {
-      that.utilitiesService.logger('error', 'Failed to save result into the database : ' + JSON.stringify(sampleResult), instrumentConnectionData.instrumentId);
-      that.recordProcessingFailure('result_missing', instrumentConnectionData);
-      return Promise.resolve(false);
+      return Promise.resolve(this.reportMissingResult(sampleResult, instrumentConnectionData));
     }
+    // A result received live is written at once, as it always was; only a
+    // reprocessed one first looks at what is already stored.
+    if (options.skipIdentical) {
+      return this.saveCheckedResults([sampleResult], instrumentConnectionData, options).then(([saved]) => saved);
+    }
+    return this.recordResult(this.resultRecord(sampleResult, instrumentConnectionData, options), sampleResult, instrumentConnectionData, options);
+  }
 
-    // The value as sent is always kept beside the one stored, whether or not
-    // a rule changed it.
-    const interpreted = applyResultRules(sampleResult.results, that.resultRulesFor(instrumentConnectionData));
-    const data = {
+  private reportMissingResult(sampleResult: any, instrumentConnectionData: InstrumentConnectionStack): boolean {
+    this.utilitiesService.logger('error', 'Failed to save result into the database : ' + JSON.stringify(sampleResult), instrumentConnectionData.instrumentId);
+    this.recordProcessingFailure('result_missing', instrumentConnectionData);
+    return false;
+  }
+
+  /** The row to store for a result: the instrument's rules applied, the value as sent kept beside. */
+  private resultRecord(sampleResult: any, instrumentConnectionData: InstrumentConnectionStack, options: ResultSaveOptions): any {
+    const interpreted = applyResultRules(sampleResult.results, this.resultRulesFor(instrumentConnectionData));
+    return {
       ...sampleResult,
       results: interpreted.value,
       results_as_sent: sampleResult.results ?? null,
       instrument_id: instrumentConnectionData.instrumentId,
+      transmission_id: options.transmissionId ?? sampleResult.transmission_id ?? null,
       // These fields are filtered out of the result tables and used only to
       // describe the corresponding PII-free usage event.
       telemetry_machine_type: instrumentConnectionData.machineType,
       telemetry_protocol: instrumentConnectionData.connectionProtocol,
       telemetry_connection_mode: instrumentConnectionData.connectionMode
     };
+  }
+
+  /**
+   * Saves reprocessed results, skipping each one already stored exactly as
+   * read. Every result is compared with what was stored before any of them
+   * is saved, and they are then saved one after another, so results of the
+   * same transmission never decide each other's fate: a transmission gives
+   * the same rows however its saves are timed, and as many as it gave live.
+   */
+  private async saveCheckedResults(sampleResults: any[], instrumentConnectionData: InstrumentConnectionStack, options: ResultSaveOptions): Promise<boolean[]> {
+    const records = sampleResults.map(sampleResult =>
+      sampleResult ? this.resultRecord(sampleResult, instrumentConnectionData, options) : null
+    );
+    const stored = await Promise.all(records.map(record => record ? this.storedState(record) : null));
+
+    const outcomes: boolean[] = [];
+    for (let index = 0; index < records.length; index++) {
+      const record = records[index];
+      if (!record) {
+        outcomes.push(this.reportMissingResult(sampleResults[index], instrumentConnectionData));
+        continue;
+      }
+      if (stored[index].identical) {
+        if (options.stats) {
+          options.stats.unchanged++;
+        }
+        this.utilitiesService.logger('info', 'Already stored, not stored again : ' + record.test_id + '|' + record.order_id, record.instrument_id);
+        outcomes.push(true);
+        continue;
+      }
+      if (stored[index].earlier) {
+        record.repeated = 1;
+      }
+      outcomes.push(await this.recordResult(record, sampleResults[index], instrumentConnectionData, options));
+    }
+    return outcomes;
+  }
+
+  /**
+   * Whether a result exactly like this one is stored, and whether any result
+   * is stored for the same sample and test. Not knowing is no reason to lose
+   * a result: when the check fails, the result is stored.
+   */
+  private async storedState(record: any): Promise<{ identical: boolean; earlier: boolean }> {
+    try {
+      if (await this.dbService.findIdenticalResult(record)) {
+        return { identical: true, earlier: true };
+      }
+      return { identical: false, earlier: await this.dbService.hasEarlierResult(record) };
+    } catch (error) {
+      console.error('Could not check for an identical stored result:', error);
+      return { identical: false, earlier: false };
+    }
+  }
+
+  private recordResult(data: any, sampleResult: any, instrumentConnectionData: InstrumentConnectionStack, options: ResultSaveOptions): Promise<boolean> {
+    const that = this;
     return new Promise<boolean>((resolve) => {
       try {
         that.dbService.recordTestResults(
           data,
           () => {
+            if (options.stats) {
+              options.stats.saved++;
+            }
             that.utilitiesService.logger('success', 'Successfully saved result : ' + sampleResult.test_id + '|' + sampleResult.order_id, instrumentConnectionData.instrumentId);
             that.resultSavedSubject.next({ sampleResult: data, instrumentId: instrumentConnectionData.instrumentId });
             resolve(true);
@@ -954,10 +938,19 @@ export class InstrumentInterfaceService {
    * Saves one result extracted from an ASTM transmission, received live or
    * read back from raw data, with the lab and instrument it came through.
    */
-  saveASTMResult(sampleResult: any, instrumentConnectionData: InstrumentConnectionStack): Promise<boolean> {
+  saveASTMResult(sampleResult: any, instrumentConnectionData: InstrumentConnectionStack, options: ResultSaveOptions = {}): Promise<boolean> {
     sampleResult.test_location = instrumentConnectionData.labName;
     sampleResult.machine_used = instrumentConnectionData.instrumentId;
-    return this.saveResult(sampleResult, instrumentConnectionData);
+    return this.saveResult(sampleResult, instrumentConnectionData, options);
+  }
+
+  /** As saveASTMResult, for every result of one transmission together. */
+  saveASTMResults(sampleResults: any[], instrumentConnectionData: InstrumentConnectionStack, options: ResultSaveOptions = {}): Promise<boolean[]> {
+    for (const sampleResult of sampleResults) {
+      sampleResult.test_location = instrumentConnectionData.labName;
+      sampleResult.machine_used = instrumentConnectionData.instrumentId;
+    }
+    return this.saveResults(sampleResults, instrumentConnectionData, options);
   }
 
   private recordProcessingFailure(

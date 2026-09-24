@@ -1,12 +1,12 @@
-import { Component, OnInit, OnDestroy, ChangeDetectorRef, ViewChild, ElementRef, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef, ViewChild, ChangeDetectionStrategy } from '@angular/core';
 import { Router } from '@angular/router';
 import { UtilitiesService } from '../../services/utilities.service';
 import { ConnectionManagerService } from '../../services/connection-manager.service';
-import { RawDataProcessorService } from '../../services/raw-data-processor.service';
-import { MatPaginator } from '@angular/material/paginator';
+import { RawDataProcessorService, ReprocessingStatus } from '../../services/raw-data-processor.service';
+import { DatabaseService } from '../../services/database.service';
+import { RawDataFilter, RawDataStore } from '../../interfaces/raw-machine-data.interface';
+import { MatPaginator, PageEvent } from '@angular/material/paginator';
 import { MatTableDataSource } from '@angular/material/table';
-import { MatSort } from '@angular/material/sort';
-import { MatDialog } from '@angular/material/dialog';
 import { SelectionModel } from '@angular/cdk/collections';
 import { Subscription } from 'rxjs';
 
@@ -18,8 +18,6 @@ import { Subscription } from 'rxjs';
   styleUrls: ['./raw-data.component.scss']
 })
 export class RawDataComponent implements OnInit, OnDestroy {
-  public lastrawData: any;
-  public data: any;
   public displayedColumns: string[] = [
     'select',
     'machine',
@@ -31,86 +29,131 @@ export class RawDataComponent implements OnInit, OnDestroy {
   public availableInstruments = [];
   private instrumentsSubscription: Subscription;
   private reprocessingSubscription: Subscription;
-  private dataSubscription: Subscription;
 
   public isReprocessing = false;
-  public reprocessingStatus = {
+  public reprocessingStatus: ReprocessingStatus = {
     inProgress: false,
     processedCount: 0,
     totalCount: 0,
     currentItem: '',
     success: 0,
     failed: 0,
-    errors: []
+    errors: [],
+    saved: 0,
+    unchanged: 0,
+    cancelled: false
   };
 
-  // For tracking processing time
+  /** The filter being edited; `applied` is the one the list shows. */
+  public filter: RawDataFilter = { instrumentId: '', from: '', to: '', search: '' };
+  public applied: RawDataFilter = {};
+  public instrumentNames: string[] = [];
+  public store: RawDataStore = 'sqlite';
+  public total = 0;
+  public pageSize = 50;
+  public pageIndex = 0;
+  public loading = false;
+  public loadError = '';
+
   private processingStartTime: number;
 
-  // Selection model for selecting rows
   selection = new SelectionModel<any>(true, []);
 
   dataSource = new MatTableDataSource<any>();
   @ViewChild(MatPaginator, { static: true }) paginator: MatPaginator;
-  @ViewChild(MatSort, { static: true }) sort: MatSort;
-  @ViewChild('searchInput') searchInput: ElementRef;
 
   constructor(
     private utilitiesService: UtilitiesService,
     private connectionManagerService: ConnectionManagerService,
     private rawDataProcessor: RawDataProcessorService,
+    private databaseService: DatabaseService,
     private cdRef: ChangeDetectorRef,
-    private router: Router,
-    private dialog: MatDialog
+    private router: Router
   ) { }
 
   ngOnInit() {
-    // Initialize empty reprocessing status
-    this.reprocessingStatus = {
-      inProgress: false,
-      processedCount: 0,
-      totalCount: 0,
-      currentItem: '',
-      success: 0,
-      failed: 0,
-      errors: []
-    };
-    this.isReprocessing = false;
+    void this.loadPage();
 
-    this.fetchrawData('');
-
-    // Subscribe to instrument status
     this.instrumentsSubscription = this.connectionManagerService.getActiveInstruments()
       .subscribe(instruments => {
         this.availableInstruments = instruments;
         this.cdRef.detectChanges();
       });
 
-    // Subscribe to reprocessing status
     this.reprocessingSubscription = this.rawDataProcessor.getReprocessingStatus()
       .subscribe(status => {
         this.reprocessingStatus = status;
         this.isReprocessing = status.inProgress;
         this.cdRef.detectChanges();
-
-        // If processing just completed, show results
-        if (this.processingStartTime && !status.inProgress &&
-          (status.processedCount > 0)) {
-          const processingTime = this.formatProcessingTime(Date.now() - this.processingStartTime);
-          this.showReprocessingResults(status, processingTime);
-          this.processingStartTime = null;
-        }
       });
   }
 
-  /** Whether the number of selected elements matches the total number of rows. */
+  /** True when the filter picks out a subset rather than everything. */
+  get isFiltered(): boolean {
+    return !!(this.applied.instrumentId || this.applied.from || this.applied.to || this.applied.search);
+  }
+
+  get invalidRange(): boolean {
+    return !!(this.filter.from && this.filter.to && this.filter.from > this.filter.to);
+  }
+
+  applyFilter(): void {
+    if (this.invalidRange) {
+      return;
+    }
+    this.applied = {
+      instrumentId: this.filter.instrumentId || undefined,
+      from: this.filter.from || undefined,
+      to: this.filter.to || undefined,
+      search: (this.filter.search ?? '').trim() || undefined
+    };
+    this.pageIndex = 0;
+    this.selection.clear();
+    void this.loadPage();
+  }
+
+  clearFilter(): void {
+    this.filter = { instrumentId: '', from: '', to: '', search: '' };
+    this.applyFilter();
+  }
+
+  onPage(event: PageEvent): void {
+    this.pageIndex = event.pageIndex;
+    this.pageSize = event.pageSize;
+    this.selection.clear();
+    void this.loadPage();
+  }
+
+  async loadPage(): Promise<void> {
+    this.loading = true;
+    this.loadError = '';
+    this.cdRef.detectChanges();
+    try {
+      const page = await this.databaseService.listRawData(this.applied, this.pageSize, this.pageIndex * this.pageSize);
+      this.store = page.store;
+      this.total = page.total;
+      this.dataSource.data = page.rows.map(row => ({ ...row, expanded: false }));
+      this.instrumentNames = await this.databaseService.listRawDataInstruments(page.store);
+    } catch (error) {
+      console.error('Error fetching raw data:', error);
+      this.loadError = 'Raw data could not be read.';
+      this.utilitiesService.logger('error', 'Failed to fetch raw data ' + (error?.message ?? error), null);
+      this.dataSource.data = [];
+      this.total = 0;
+    } finally {
+      this.loading = false;
+      this.cdRef.detectChanges();
+    }
+  }
+
+  /** Whether the number of selected elements matches the number of rows on the page. */
   isAllSelected() {
     const numSelected = this.selection.selected.length;
     const numRows = this.dataSource.data.length;
     return numSelected === numRows && numRows > 0;
   }
 
-  /** Selects all rows if they are not all selected; otherwise clear selection. */
+  /** Selects all rows on the page if they are not all selected; otherwise clears the selection. */
   masterToggle() {
     if (this.isAllSelected()) {
       this.selection.clear();
@@ -119,7 +162,6 @@ export class RawDataComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** The label for the checkbox on the passed row */
   checkboxLabel(row?: any): string {
     if (!row) {
       return `${this.isAllSelected() ? 'select' : 'deselect'} all`;
@@ -131,15 +173,6 @@ export class RawDataComponent implements OnInit, OnDestroy {
     this.router.navigate(['/console']);
   }
 
-  filterData(event: any) {
-    const searchTerm = event.target.value;
-    if (searchTerm && searchTerm.length >= 2) {
-      this.fetchrawData(searchTerm);
-    } else {
-      this.fetchrawData('');
-    }
-  }
-
   toggleRow(row: any, event?: MouseEvent) {
     if (event) {
       event.stopPropagation();
@@ -147,51 +180,7 @@ export class RawDataComponent implements OnInit, OnDestroy {
     row.expanded = !row.expanded;
   }
 
-  fetchrawData(searchTerm: string) {
-    if (this.dataSubscription) {
-      this.dataSubscription.unsubscribe();
-    }
-
-    this.utilitiesService.fetchrawData(searchTerm);
-
-    this.dataSubscription = this.utilitiesService.lastrawData.subscribe({
-      next: lastFewrawData => {
-        if (lastFewrawData && lastFewrawData[0]) {
-          this.lastrawData = lastFewrawData[0];
-          this.data = lastFewrawData[0];
-
-          // Add expanded property to each row
-          if (Array.isArray(this.data)) {
-            this.data.forEach(row => {
-              if (row) {
-                row.expanded = false;
-              }
-            });
-
-            this.dataSource.data = this.lastrawData;
-            this.dataSource.paginator = this.paginator;
-            this.dataSource.sort = this.sort;
-          } else {
-            console.error('Invalid data format:', this.data);
-            this.dataSource.data = [];
-          }
-        } else {
-          this.dataSource.data = [];
-        }
-
-        this.cdRef.detectChanges();
-      },
-      error: error => {
-        console.error('Error fetching raw data:', error);
-        this.dataSource.data = [];
-        this.cdRef.detectChanges();
-      }
-    });
-  }
-
-  // Select a row when clicking on it
   selectRow(row: any, event: MouseEvent) {
-    // Don't select if we clicked on an action button or expand toggle
     const target = event.target as HTMLElement;
     const isActionButton = target.closest('.btn-expand-toggle') ||
       target.closest('.action-btn') ||
@@ -202,121 +191,116 @@ export class RawDataComponent implements OnInit, OnDestroy {
     }
   }
 
-  /**
-   * Reprocess a single row
-   */
   reprocessSingleRow(row: any, event?: Event) {
-    // Prevent event propagation
     if (event) {
       event.preventDefault();
       event.stopPropagation();
     }
-
     if (this.isReprocessing) {
       this.showMessage('Already processing data. Please wait until it completes.');
       return;
     }
-
-    // Log the action for debugging
-    console.log(`Reprocessing row ID ${row.id} for ${row.machine || row.instrument_id}`);
-
-    // Clear the current selection and select only this row
     this.selection.clear();
     this.selection.select(row);
-
-    // Process the selected row
-    this.reprocessSelected();
+    void this.reprocessSelected();
   }
 
-  /**
-   * Reprocess selected rows
-   */
   async reprocessSelected() {
     if (this.isReprocessing) {
       this.showMessage('Already processing data. Please wait until it completes.');
       return;
     }
 
-    const selected = this.selection.selected;
-    if (!selected || selected.length === 0) {
+    const selected = [...this.selection.selected].sort((a, b) => Number(a.id) - Number(b.id));
+    if (selected.length === 0) {
       this.showMessage('Please select rows to reprocess');
       return;
     }
-
-    // Confirm before processing large number of rows
-    if (selected.length > 5) {
-      if (!confirm(`You are about to reprocess ${selected.length} raw data entries. This might take some time. Continue?`)) {
-        return;
-      }
+    if (selected.length > 5 && !confirm(`Reprocess ${selected.length} transmissions?\n\n${RawDataComponent.REPROCESS_EXPLANATION}`)) {
+      return;
     }
 
+    await this.run(`${selected.length} selected raw data entries`, () => this.rawDataProcessor.reprocessRawData(selected));
+    this.selection.clear();
+  }
+
+  /** Reprocesses every transmission the current filter matches, not only the page shown. */
+  async reprocessAllMatching() {
+    if (this.isReprocessing || this.total === 0) {
+      return;
+    }
+    const scope = this.describeFilter(this.applied);
+    if (!confirm(`Reprocess ${this.total.toLocaleString()} transmissions (${scope})?\n\n${RawDataComponent.REPROCESS_EXPLANATION}\n\nYou can stop it at any time.`)) {
+      return;
+    }
+    const filter = { ...this.applied };
+    const store = this.store;
+    await this.run(`${this.total} raw data entries (${scope})`, () => this.rawDataProcessor.reprocessMatching(store, filter));
+  }
+
+  cancelReprocessing(): void {
+    this.rawDataProcessor.cancel();
+  }
+
+  private static readonly REPROCESS_EXPLANATION =
+    'Reprocessing reads each transmission again with the current settings. ' +
+    'It does not store or send again a result that is already stored exactly as read. ' +
+    'It stores a changed result as a new result and sends it to the LIS. ' +
+    'If the sample already had a result for the same test, it marks the new result as a repeat.';
+
+  private describeFilter(filter: RawDataFilter): string {
+    const parts: string[] = [];
+    parts.push(filter.instrumentId ? filter.instrumentId : 'every instrument');
+    if (filter.from || filter.to) {
+      parts.push(`${filter.from || 'the start'} to ${filter.to || 'today'}`);
+    }
+    if (filter.search) {
+      parts.push(`containing "${filter.search}"`);
+    }
+    return parts.join(', ');
+  }
+
+  private async run(description: string, work: () => Promise<ReprocessingStatus>): Promise<void> {
+    this.processingStartTime = Date.now();
+    this.utilitiesService.logger('info', `Starting reprocessing of ${description}`, null);
     try {
-      // Start tracking processing time
-      this.processingStartTime = Date.now();
-
-      // Set local processing state
-      this.isReprocessing = true;
-
-      // Explicitly initialize the reprocessing status object
-      this.reprocessingStatus = {
-        inProgress: true,
-        processedCount: 0,
-        totalCount: selected.length,
-        currentItem: 'Starting reprocessing...',
-        success: 0,
-        failed: 0,
-        errors: []
-      };
-
-      // Force change detection
-      this.cdRef.detectChanges();
-
-      // Log the start of reprocessing
-      this.utilitiesService.logger('info', `Starting reprocessing of ${selected.length} selected raw data entries`, null);
-
-      // Call the reprocessing service
-      console.log('Calling reprocessRawData with', selected.length, 'rows');
-      const result = await this.rawDataProcessor.reprocessRawData(selected);
-      console.log('Processing complete with result:', result);
-
-      // Show results
-      const processingTime = this.formatProcessingTime(Date.now() - this.processingStartTime);
-      this.showMessage(`Reprocessing complete: ${result.success} succeeded, ${result.failed} failed. Time: ${processingTime}`);
-
-      // Set success status - critical for UI update
-      this.reprocessingStatus.inProgress = false;
-      this.reprocessingStatus.success = result.success;
-      this.reprocessingStatus.failed = result.failed;
-      this.isReprocessing = false;
-
-      // Force change detection
-      this.cdRef.detectChanges();
-
-      // Clear the selection
-      this.selection.clear();
-
-      // Refresh the data after a delay
-      setTimeout(() => this.fetchrawData(''), 1000);
+      const result = await work();
+      this.reportResult(result, this.formatProcessingTime(Date.now() - this.processingStartTime));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Error during reprocessing:', error);
       this.utilitiesService.logger('error', `Error during reprocessing: ${errorMessage}`, null);
       this.showMessage(`Error during reprocessing: ${errorMessage}`);
-
-      // Reset processing state
+    } finally {
       this.isReprocessing = false;
-      this.reprocessingStatus.inProgress = false;
-
-      // Force change detection
       this.cdRef.detectChanges();
+      void this.loadPage();
     }
   }
 
-  /**
-   * Show a message to the user
-   */
+  private reportResult(status: ReprocessingStatus, processingTime: string): void {
+    const outcome = status.cancelled
+      ? `Reprocessing stopped after ${status.processedCount} of ${status.totalCount} transmissions.`
+      : `Reprocessing complete: ${status.processedCount} transmissions in ${processingTime}.`;
+    this.showMessage(
+      `${outcome}\n\n` +
+      `New results stored: ${status.saved}\n` +
+      `Already stored, not stored again: ${status.unchanged}\n` +
+      `Transmissions that could not be fully read: ${status.failed}`
+    );
+
+    if (status.failed > 0) {
+      this.utilitiesService.logger('warn', `Reprocessing completed with ${status.failed} failures.`, null);
+      status.errors.forEach((error, index) => {
+        this.utilitiesService.logger('error', `Error ${index + 1}: ${error}`, null);
+      });
+    } else {
+      this.utilitiesService.logger('success',
+        `Reprocessed ${status.processedCount} transmissions in ${processingTime}: ${status.saved} new results, ${status.unchanged} already stored`,
+        null);
+    }
+  }
+
   showMessage(message: string) {
-    console.log('Message:', message);
     alert(message);
   }
 
@@ -332,37 +316,10 @@ export class RawDataComponent implements OnInit, OnDestroy {
     return `${minutes} min ${remainingSeconds} sec`;
   }
 
-  showReprocessingResults(status: any, processingTime: string) {
-    const message = `Reprocessing complete: ${status.success} succeeded, ${status.failed} failed. Time: ${processingTime}`;
-    this.showMessage(message);
-
-    // Log results
-    if (status.failed > 0) {
-      this.utilitiesService.logger('warn',
-        `Reprocessing completed with ${status.failed} failures. ${status.errors.length} errors occurred.`,
-        null);
-
-      // Log each error
-      status.errors.forEach((error, index) => {
-        this.utilitiesService.logger('error', `Error ${index + 1}: ${error}`, null);
-      });
-    } else {
-      this.utilitiesService.logger('success',
-        `Successfully reprocessed ${status.success} records in ${processingTime}`,
-        null);
-    }
-  }
-
   ngOnDestroy() {
-    // Clean up subscriptions
     [
       this.instrumentsSubscription,
-      this.reprocessingSubscription,
-      this.dataSubscription
-    ].forEach(subscription => {
-      if (subscription) {
-        subscription.unsubscribe();
-      }
-    });
+      this.reprocessingSubscription
+    ].forEach(subscription => subscription?.unsubscribe());
   }
 }

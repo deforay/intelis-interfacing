@@ -1,3 +1,4 @@
+import { RawDataProcessorService, CompactionProgress, CompactionReport } from '../../services/raw-data-processor.service';
 import { Component, OnInit, OnDestroy, ChangeDetectionStrategy } from '@angular/core';
 import { FormBuilder, FormGroup, FormArray, Validators, AbstractControl, ValidatorFn } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -8,7 +9,7 @@ import { CryptoService } from '../../services/crypto.service';
 import { v4 as uuidv4 } from 'uuid';
 import { ConnectionManagerService } from '../../services/connection-manager.service';
 import { Subscription } from 'rxjs';
-import { DatabaseService } from '../../services/database.service';
+import { DatabaseService, StoreUsage } from '../../services/database.service';
 import { LisApiService } from '../../services/lis-api.service';
 import { LisApiConfig } from '../../interfaces/lis-api-config.interface';
 import { IntelisConnectionService } from '../../services/intelis-connection.service';
@@ -75,6 +76,10 @@ export class SettingsComponent implements OnInit, OnDestroy {
   public lisConnectionChoice: 'intelis' | 'other' | null = null;
   public logCleanupBusy: boolean = false;
   public logCleanupMessage: string = '';
+  public storageUsage: { sqlite: StoreUsage; mysql: StoreUsage } | null = null;
+  public storageBusy = false;
+  public storageMessage = '';
+  public compactionProgress: CompactionProgress | null = null;
 
   // Result forwarding. Its own form: it saves on its own button, without the
   // instrument reconnect the main settings save performs.
@@ -152,7 +157,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
     private readonly lisApiService: LisApiService,
     private readonly intelisConnectionService: IntelisConnectionService,
     private readonly resultWebhookService: ResultWebhookService,
-    private readonly resultWebhookSync: ResultWebhookSyncService
+    private readonly resultWebhookSync: ResultWebhookSyncService,
+    private readonly rawDataProcessor: RawDataProcessorService
   ) {
 
     const commonSettingsStore = this.electronStoreService.get('commonConfig');
@@ -764,6 +770,101 @@ export class SettingsComponent implements OnInit, OnDestroy {
     }
   }
 
+
+  public async refreshStorageUsage(): Promise<void> {
+    try {
+      this.storageUsage = await this.databaseService.storageUsage();
+    } catch (error) {
+      this.storageMessage = `Storage use could not be read: ${error?.message ?? error}`;
+    }
+  }
+
+  public formatBytes(bytes: number | null | undefined): string {
+    if (bytes === null || bytes === undefined) return '—';
+    const units = ['bytes', 'KB', 'MB', 'GB'];
+    let value = bytes;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit++;
+    }
+    return `${unit === 0 ? value : value.toFixed(1)} ${units[unit]}`;
+  }
+
+  /**
+   * Links stored results to the transmission they came from, keeps on each
+   * only its own records, and gives the freed space back to the
+   * disk. Transmissions themselves are never changed or removed.
+   */
+  public async reviewStorageCompaction(): Promise<void> {
+    if (this.storageBusy) return;
+    this.storageBusy = true;
+    this.storageMessage = '';
+
+    try {
+      await this.refreshStorageUsage();
+      const usage = this.storageUsage;
+      if (!usage) return;
+
+      const stores: ('sqlite' | 'mysql')[] = usage.mysql.available ? ['sqlite', 'mysql'] : ['sqlite'];
+      const unlinked = stores.reduce((total, store) => total + usage[store].results - usage[store].linkedResults, 0);
+      if (unlinked === 0) {
+        this.storageMessage = 'Every result is already linked to its transmission. Nothing to compact.';
+        return;
+      }
+
+      const mysqlNote = usage.mysql.available ? ' Both this computer\'s database and the MySQL database are compacted.' : '';
+      const confirmation = await this.electronService.ipcRenderer.invoke('show-confirm-dialog', {
+        type: 'warning',
+        buttons: ['Cancel', 'Compact Storage'],
+        defaultId: 0,
+        cancelId: 0,
+        title: 'Compact Storage',
+        message: `Link ${unlinked.toLocaleString()} results to their stored transmissions?`,
+        detail:
+          'Each result is linked to the transmission it came from and keeps only its own records. ' +
+          'A result changes only when every record of its copy is in a stored transmission. ' +
+          'Stored transmissions are not changed or removed. No result is sent to the LIS again.' +
+          `${mysqlNote}\n\n` +
+          'On a large database this takes several minutes. At the end, the database is rewritten so the space ' +
+          'returns to the disk. Take a backup first, and run it when no analyzer is sending. A result that arrives ' +
+          'during the rewrite waits for it, and can be reported as not saved although it is saved.'
+      });
+      if (confirmation?.response !== 1) return;
+
+      const reports: CompactionReport[] = [];
+      for (const store of stores) {
+        const report = await this.rawDataProcessor.compactStorage(store, progress => {
+          this.compactionProgress = progress;
+        });
+        reports.push(report);
+        if (report.cancelled) break;
+        this.compactionProgress = null;
+        this.storageMessage = `Giving the freed space back to the disk (${store === 'mysql' ? 'MySQL' : 'this computer'})…`;
+        await this.databaseService.reclaimSpace(store);
+      }
+
+      await this.refreshStorageUsage();
+      this.storageMessage = reports.map(report => {
+        const where = report.store === 'mysql' ? 'MySQL' : 'This computer';
+        const skipped = report.skippedTransmissions
+          ? ` ${report.skippedTransmissions.toLocaleString()} transmissions were not read because no instrument in Settings has their name.`
+          : '';
+        const stopped = report.cancelled ? ' Stopped before the end; run it again to continue.' : '';
+        return `${where}: ${report.linkedResults.toLocaleString()} results linked, ${report.trimmedResults.toLocaleString()} ` +
+          `cut to their own records.${skipped}${stopped}`;
+      }).join(' ');
+    } catch (error) {
+      this.storageMessage = `Compact Storage stopped: ${error?.message ?? error}. What it already did stays done. Stored transmissions are unchanged.`;
+    } finally {
+      this.compactionProgress = null;
+      this.storageBusy = false;
+    }
+  }
+
+  public stopStorageCompaction(): void {
+    this.rawDataProcessor.cancel();
+  }
 
   createInstrumentFormGroup(): FormGroup {
     const instrumentId = uuidv4();

@@ -627,10 +627,54 @@ export class ASTMHelperService {
   }
 
   /**
+   * The records that belong to each order record of a message, in order: the
+   * message header (every record before the first patient or order), the
+   * patient record the order follows with that patient's own records, and
+   * the order with the records after it up to the next patient, order or
+   * terminator. What a result keeps as its raw text, so it never carries
+   * another patient's record.
+   * @param astmArray Records of one message, in transmission order
+   */
+  ownRecordsByOrder(astmArray: string[]): string[][] {
+    const typeOf = (record: string) => (record ?? '').replace(/^\d*/, '').charAt(0);
+    const header: string[] = [];
+    let patient: string[] = [];
+    let order: string[] | null = null;
+    const orders: string[][] = [];
+    let seenPatientOrOrder = false;
+
+    for (const record of astmArray) {
+      if (!record) {
+        continue;
+      }
+      const recordType = typeOf(record);
+      if (recordType === 'P') {
+        seenPatientOrOrder = true;
+        patient = [record];
+        order = null;
+      } else if (recordType === 'O') {
+        seenPatientOrOrder = true;
+        order = [...header, ...patient, record];
+        orders.push(order);
+      } else if (recordType === 'L') {
+        order = null;
+      } else if (order) {
+        order.push(record);
+      } else if (seenPatientOrOrder) {
+        patient.push(record);
+      } else {
+        header.push(record);
+      }
+    }
+    return orders;
+  }
+
+  /**
    * Extracts one sample result per order record in a message
    * @param astmArray Records of one message, in transmission order
-   * @param partData Raw ASTM part data, stored with each result
-   * @returns Sample results in transmission order; empty when no order could be read
+   * @param partData Raw ASTM part data
+   * @returns Sample results in transmission order, each with the records it
+   * was read from as its raw text; empty when no order could be read
    */
   extractSampleResultsFromASTM(astmArray: string[], partData: string): any[] {
     return this.extractASTMResults(astmArray, partData).results;
@@ -649,18 +693,23 @@ export class ASTMHelperService {
     if (this.isHL7Message(astmArray)) {
       return { results, unreadableOrders, isHL7: true };
     }
-    for (const group of this.splitASTMRecordsByOrder(astmArray)) {
+    const ownRecords = this.ownRecordsByOrder(astmArray);
+    this.splitASTMRecordsByOrder(astmArray).forEach((group, index) => {
       const dataArray = this.getASTMDataBlock(group);
       if (Object.keys(dataArray).length === 0) {
-        continue;
+        return;
       }
       const sampleResult = this.extractSampleResultFromASTM(dataArray, partData);
       if (sampleResult) {
+        // This order's own records, not the whole message: a batch repeated
+        // on every result it carries grew the database by the square of its
+        // size. The whole transmission is kept in raw data.
+        sampleResult.raw_text = (ownRecords[index] ?? group).join('<CR>');
         results.push(sampleResult);
       } else if (dataArray['O']?.length > 0) {
         unreadableOrders++;
       }
-    }
+    });
     return { results, unreadableOrders };
   }
 
