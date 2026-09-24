@@ -41,6 +41,7 @@ import { TransmissionDialogComponent } from './components/transmission-dialog/tr
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatDialogModule } from '@angular/material/dialog';
 import { MatAutocompleteModule } from '@angular/material/autocomplete';
+import { MatMenuModule } from '@angular/material/menu';
 import { MatInputModule } from '@angular/material/input';
 
 @NgModule({
@@ -57,6 +58,7 @@ import { MatInputModule } from '@angular/material/input';
     BrowserModule,
     MatDialogModule,
     MatAutocompleteModule,
+    MatMenuModule,
     MatInputModule,
     MatCheckboxModule,
     MatTableModule,
