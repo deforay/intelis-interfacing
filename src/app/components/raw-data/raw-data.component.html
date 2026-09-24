@@ -127,7 +127,7 @@
              placeholder="Sample ID or any text in the data">
     </div>
     <div class="filter-actions">
-      <button type="submit" class="btn btn-primary" [disabled]="invalidRange || loading">
+      <button type="submit" class="btn btn-primary" [disabled]="invalidRange || invalidDay || loading">
         <i class="fas fa-filter"></i>
         <span>Apply</span>
       </button>
@@ -135,8 +135,9 @@
         <span>Clear</span>
       </button>
     </div>
-    <p class="filter-note" *ngIf="invalidRange">The first day is after the last day.</p>
-    <p class="filter-note" *ngIf="!invalidRange">
+    <p class="filter-note" *ngIf="invalidDay">Enter each day as {{ dateFormat }}, or pick it from the calendar.</p>
+    <p class="filter-note" *ngIf="invalidRange && !invalidDay">The first day is after the last day.</p>
+    <p class="filter-note" *ngIf="!invalidRange && !invalidDay">
       {{ total | number }} transmission{{ total === 1 ? '' : 's' }}{{ isFiltered ? ' match' : '' }},
       read from {{ store === 'mysql' ? 'the MySQL database' : 'this computer\'s database' }}.
       Days are compared with the received time as shown below.
