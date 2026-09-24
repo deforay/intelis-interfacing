@@ -159,7 +159,7 @@ export class RawDataProcessorService {
 
   /** Stops the background compaction, if one is running, and waits for it. */
   async stopBackgroundCompaction(): Promise<void> {
-    if (!this.backgroundRun) {
+    if (this.backgroundRun === null) {
       return;
     }
     this.backgroundStopRequested = true;
@@ -170,37 +170,41 @@ export class RawDataProcessorService {
     if (this.reprocessingStatus.value.inProgress) {
       return;
     }
-    const dbService = this.instrumentInterfaceService.dbService;
-    const stores: RawDataStore[] = (await dbService.rawDataStore()) === 'mysql' ? ['sqlite', 'mysql'] : ['sqlite'];
+    const stores: RawDataStore[] = (await this.instrumentInterfaceService.dbService.rawDataStore()) === 'mysql' ? ['sqlite', 'mysql'] : ['sqlite'];
     for (const store of stores) {
-      if (this.backgroundStopRequested) {
-        return;
-      }
-      if (this.isCompacted(store)) {
-        continue;
-      }
-      try {
-        // A database with no result left to link has nothing to compact.
-        if (await dbService.countUnlinkedResults(store) > 0) {
-          const report = await this.runCompaction(store, progress => this.backgroundCompaction.next(progress), () => this.backgroundStopRequested);
-          if (report.cancelled) {
-            return;
-          }
-          this.utilsService.logger('info',
-            `Storage compacted (${store === 'mysql' ? 'MySQL' : 'this computer'}): ${report.linkedResults} results linked, ` +
-            `${report.trimmedResults} cut to their own records.`, null);
-        }
-        this.markCompacted(store);
-      } catch (error) {
-        // It is tried again at the next start. What it did stays done.
-        this.utilsService.logger('error', `Storage compaction stopped: ${error instanceof Error ? error.message : error}`, null);
+      if (this.backgroundStopRequested || !(await this.compactStoreAutomatically(store))) {
         return;
       }
     }
   }
 
+  /** Compacts one database in the background. False when it did not finish. */
+  private async compactStoreAutomatically(store: RawDataStore): Promise<boolean> {
+    if (this.isCompacted(store)) {
+      return true;
+    }
+    try {
+      // A database with no result left to link has nothing to compact.
+      if (await this.instrumentInterfaceService.dbService.countUnlinkedResults(store) > 0) {
+        const report = await this.runCompaction(store, progress => this.backgroundCompaction.next(progress), () => this.backgroundStopRequested);
+        if (report.cancelled) {
+          return false;
+        }
+        this.utilsService.logger('info',
+          `Storage compacted (${store === 'mysql' ? 'MySQL' : 'this computer'}): ${report.linkedResults} results linked, ` +
+          `${report.trimmedResults} cut to their own records.`, null);
+      }
+      this.markCompacted(store);
+      return true;
+    } catch (error) {
+      // It is tried again at the next start. What it did stays done.
+      this.utilsService.logger('error', `Storage compaction stopped: ${error instanceof Error ? error.message : error}`, null);
+      return false;
+    }
+  }
+
   private isCompacted(store: RawDataStore): boolean {
-    return !!(this.electronStoreService.get(RawDataProcessorService.COMPACTED_STORES_KEY) ?? {})[this.compactedStoreKey(store)];
+    return !!this.electronStoreService.get(RawDataProcessorService.COMPACTED_STORES_KEY)?.[this.compactedStoreKey(store)];
   }
 
   private markCompacted(store: RawDataStore): void {
@@ -292,21 +296,7 @@ export class RawDataProcessorService {
           }
           status.currentItem = `Processing ${status.processedCount + 1}/${totalCount} (${entry.instrument_id || entry.machine})`;
           publish();
-
-          try {
-            const outcome = await this.reprocessEntry(entry, stats);
-            if (outcome === 'stored') {
-              status.success++;
-            } else if (outcome === 'empty') {
-              status.empty++;
-            } else {
-              status.failed++;
-              status.errors.push(`Failed to reprocess raw data ID: ${entry.id}`);
-            }
-          } catch (error) {
-            status.failed++;
-            status.errors.push(`Error processing raw data ID ${entry.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-          }
+          await this.reprocessCounted(entry, stats, status);
           status.processedCount++;
           publish();
         }
@@ -324,6 +314,24 @@ export class RawDataProcessorService {
     this.cancelRequested = false;
     publish();
     return { ...status, ...stats };
+  }
+
+  /** Reprocesses one transmission and counts its outcome in `status`. */
+  private async reprocessCounted(entry: any, stats: ResultSaveStats, status: ReprocessingStatus): Promise<void> {
+    try {
+      const outcome = await this.reprocessEntry(entry, stats);
+      if (outcome === 'stored') {
+        status.success++;
+      } else if (outcome === 'empty') {
+        status.empty++;
+      } else {
+        status.failed++;
+        status.errors.push(`Failed to reprocess raw data ID: ${entry.id}`);
+      }
+    } catch (error) {
+      status.failed++;
+      status.errors.push(`Error processing raw data ID ${entry.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   private getInstrumentSettings(analyzerMachineName: string): any {
