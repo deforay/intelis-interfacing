@@ -83,7 +83,7 @@
     "@types/node": "24.13.3",
     "@typescript-eslint/eslint-plugin": "8.70.1",
     "@typescript-eslint/parser": "8.70.1",
-    "@vitest/coverage-v8": "4.1.11",
+    "@vitest/coverage-v8": "5.0.1",
     "angular-eslint": "22.5.0",
     "bootstrap": "5.3.8",
     "concurrently": "10.0.5",
@@ -99,7 +99,7 @@
     "playwright": "1.63.0",
     "ts-node": "10.9.2",
     "typescript": "6.0.3",
-    "vitest": "4.1.11",
+    "vitest": "5.0.1",
     "wait-on": "9.1.0"
   },
   "engines": {
