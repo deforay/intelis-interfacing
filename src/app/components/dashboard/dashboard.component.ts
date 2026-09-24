@@ -7,6 +7,7 @@ import { Subscription } from 'rxjs';
 import { LIMS_SYNC_STATUS } from '../../constants/domain.constants';
 
 interface ResultData {
+  id: number;
   added_on: string;
   machine_used: string;
   order_id: string;
@@ -76,6 +77,7 @@ export class DashboardComponent implements OnInit, OnDestroy {
       next: lastFewOrders => {
         if (lastFewOrders && lastFewOrders.length > 0) {
           this.data = lastFewOrders[0].map((item: any) => ({
+            id: Number(item.id),
             added_on: item.added_on,
             machine_used: item.machine_used,
             order_id: item.order_id,
@@ -119,10 +121,9 @@ export class DashboardComponent implements OnInit, OnDestroy {
     if (!data || data.length === 0) {
       return undefined;
     }
-    return data.reduce((latest, current) =>
-      new Date(latest.added_on) > new Date(current.added_on) ? latest : current,
-      data[0]
-    );
+    // The newest row, not the latest added_on: a time zone change can make a
+    // newer row's wall time the earlier one.
+    return data.reduce((latest, current) => current.id > latest.id ? current : latest, data[0]);
   }
 
   filterByInstrument() {

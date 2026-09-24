@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { TelemetryEventInput } from '../interfaces/telemetry-event.interface';
 import { RawDataFilter, RawDataStore } from '../interfaces/raw-machine-data.interface';
 import { transmissionSha256 } from './transmission-fingerprint';
+import { formatInTimeZone } from '../../../shared/time-zone';
 import {
   IntelisActivityEvent,
   IntelisResultAcknowledgement,
@@ -944,6 +945,7 @@ export class DatabaseService {
 
     const sqliteRecord = this.filterRecordColumns({
       ...orderData,
+      added_on: orderData.added_on || this.receivedNow(),
       ingestion_id: orderData.ingestion_id || uuidv4(),
       lims_sync_status: orderData.lims_sync_status ?? 0,
       lims_sync_date_time: orderData.lims_sync_date_time ?? null,
@@ -1135,6 +1137,14 @@ export class DatabaseService {
     const sourceInstallationId = `interface-${uuidv4()}`;
     this.store?.set?.('sourceInstallationId', sourceInstallationId);
     return sourceInstallationId;
+  }
+
+  /**
+   * When a result or transmission is received, in the Settings time zone.
+   * Both databases get the same value, rather than each its own default.
+   */
+  private receivedNow(): string {
+    return formatInTimeZone(new Date(), this.commonSettings?.timeZone);
   }
 
   private toDatabaseDateTime(value?: Date | string): string {
@@ -1885,7 +1895,9 @@ export class DatabaseService {
       queryParams = new Array(columns.length).fill(searchTerm);
     }
 
-    recentResultsQuery += ' ORDER BY added_on DESC LIMIT 1000';
+    // Newest first by row id, the order results arrived. added_on is a wall
+    // time with no zone, so it can run backwards across a time zone change.
+    recentResultsQuery += ' ORDER BY id DESC LIMIT 1000';
 
     this.execSqlite(recentResultsQuery, queryParams)
       .then(results => {
@@ -1989,22 +2001,33 @@ export class DatabaseService {
 
   fetchLastSyncTimes(): Observable<any> {
     const subject = new Subject<any>();
-    const query = 'SELECT MAX(lims_sync_date_time) as lastLimsSync, MAX(added_on) as lastResultReceived FROM `orders`';
+    const syncQuery = 'SELECT MAX(lims_sync_date_time) as lastLimsSync FROM `orders`';
+    // The last result received is the newest local row. Every result is stored
+    // in SQLite first, so its ids follow arrival. MySQL ids follow copying,
+    // which a queued result can reach late, and the largest added_on can be
+    // an older row after a time zone change.
+    const receivedQuery = 'SELECT added_on as lastResultReceived FROM `orders` ORDER BY id DESC LIMIT 1';
+
+    const finish = (syncRow: any) => {
+      this.execSqlite(receivedQuery, [])
+        .then(rows => {
+          subject.next({ ...syncRow, lastResultReceived: rows[0]?.lastResultReceived ?? null });
+          subject.complete();
+        })
+        .catch(error => {
+          subject.error(error);
+          subject.complete();
+        });
+    };
 
     this.checkMysqlConnection(null, () => {
-      this.execQuery(query, null, (res) => {
-        subject.next(res[0]);
-        subject.complete();
-      }, (err) => {
+      this.execQuery(syncQuery, null, (res) => finish(res[0]), (err) => {
         subject.error(err);
         subject.complete();
       });
-    }, (err) => {
-      this.execSqlite(query, null)
-        .then(res => {
-          subject.next(res[0]);
-          subject.complete();
-        })
+    }, () => {
+      this.execSqlite(syncQuery, null)
+        .then(res => finish(res[0]))
         .catch(error => {
           subject.error(error);
           subject.complete();
@@ -2026,6 +2049,7 @@ export class DatabaseService {
       ...data,
       transmission_id: data.transmission_id || uuidv4(),
       sha256: data.sha256 || transmissionSha256(data.data),
+      added_on: data.added_on || this.receivedNow(),
     };
 
     const handleSQLiteInsert = (mysqlInserted: boolean) => {

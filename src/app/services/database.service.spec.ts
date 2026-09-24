@@ -36,6 +36,91 @@ describe('DatabaseService result durability', () => {
     expect(values.at(-1)).toBe(0);
   });
 
+  it('stamps the received time in the Settings time zone, the same in both databases', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-24T22:15:09Z'));
+    try {
+      const service = createService();
+      service.commonSettings = { timeZone: 'Asia/Kolkata' };
+      service.checkMysqlConnection = vi.fn((_params, success) => success());
+      service.execQuery = vi.fn((_query, _values, success) => success({ insertId: 1 }));
+      service.execSqlite = vi.fn().mockResolvedValue({ lastID: 1 });
+
+      await new Promise<void>((resolve, reject) => {
+        service.recordTestResults(sampleResult, () => resolve(), reject);
+      });
+      await new Promise<void>((resolve, reject) => {
+        service.recordRawData({ data: 'H|\\^&', machine: 'ANALYZER-1', instrument_id: 'ANALYZER-1', sha256: 'f'.repeat(64) }, () => resolve(), reject);
+      });
+
+      const inserts = [...service.execSqlite.mock.calls, ...service.execQuery.mock.calls]
+        .filter(([query]) => /^INSERT INTO `(orders|raw_data)`/.test(query));
+      expect(inserts).toHaveLength(4);
+      for (const [query, values] of inserts) {
+        expect(query).toContain('`added_on`');
+        expect(values).toContain('2026-09-25 03:45:09');
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('lists recent results newest row first, whatever their received times say', async () => {
+    const service = createService();
+    // Before the upgrade SQLite stored UTC; after it, a zone west of UTC stores
+    // an earlier wall time for a later result.
+    const rows = [
+      { id: 1, added_on: '2026-09-24 14:00:00' },
+      { id: 2, added_on: '2026-09-24 10:01:00' },
+    ];
+    service.execSqlite = vi.fn(async (query: string) => {
+      expect(query).toMatch(/ORDER BY id DESC LIMIT 1000$/);
+      return [...rows].sort((a, b) => b.id - a.id);
+    });
+
+    const results: any[] = await firstValueFrom(service.fetchRecentResults(''));
+
+    expect(results.map(row => row.id)).toEqual([2, 1]);
+  });
+
+  it('reports the newest local row as the last result received, even when MySQL copied it first', async () => {
+    const service = createService();
+    service.checkMysqlConnection = vi.fn((_params, success) => success());
+    // In MySQL a result queued offline (A) was copied after a later one (B),
+    // so A has the larger MySQL id. Locally B is the newer row.
+    service.execQuery = vi.fn((query: string, _values, success) => {
+      expect(query).not.toContain('added_on');
+      success([{ lastLimsSync: '2026-09-24 10:05:00' }]);
+    });
+    const local = [
+      { id: 7, added_on: '2026-09-24 09:00:00' },
+      { id: 8, added_on: '2026-09-24 10:01:00' },
+    ];
+    service.execSqlite = vi.fn(async (query: string) => {
+      expect(query).toMatch(/ORDER BY id DESC LIMIT 1$/);
+      const newest = [...local].sort((a, b) => b.id - a.id)[0];
+      return [{ lastResultReceived: newest.added_on }];
+    });
+
+    const times = await new Promise<any>((resolve, reject) =>
+      service.fetchLastSyncTimes().subscribe({ next: resolve, error: reject }));
+
+    expect(times).toEqual({ lastLimsSync: '2026-09-24 10:05:00', lastResultReceived: '2026-09-24 10:01:00' });
+  });
+
+  it('keeps a received time that is already given', async () => {
+    const service = createService();
+    service.commonSettings = { timeZone: 'UTC' };
+    service.checkMysqlConnection = vi.fn((_params, _success, failure) => failure(new Error('offline')));
+    service.execSqlite = vi.fn().mockResolvedValue({ lastID: 1 });
+
+    await new Promise<void>((resolve, reject) => {
+      service.recordTestResults({ ...sampleResult, added_on: '2026-01-02 03:04:05' }, () => resolve(), reject);
+    });
+
+    expect(service.execSqlite.mock.calls[0][1]).toContain('2026-01-02 03:04:05');
+  });
+
   it('marks the SQLite copy replicated only after MySQL succeeds', async () => {
     const service = createService();
     service.checkMysqlConnection = vi.fn((_params, success) => success());
