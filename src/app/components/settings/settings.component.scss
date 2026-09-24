@@ -1304,8 +1304,28 @@ select.form-control {
     margin-top: 0.75rem;
   }
 
-  .result-rules-copy {
-    min-width: 14rem;
+  // No rules: what a rule is and the actions, instead of a whole section.
+  &.no-rules {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1.5rem;
+
+    .result-rules-heading {
+      flex: 1 1 28rem;
+
+      h4 {
+        margin: 0 0 0.375rem;
+      }
+
+      .help-text {
+        margin: 0;
+      }
+    }
+
+    .result-rules-footer {
+      margin: 0;
+    }
   }
 }
 

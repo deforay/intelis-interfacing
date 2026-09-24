@@ -98,8 +98,12 @@ replaced, so no rule can make a failed run look like a result.
   you do.
 
 - **Duplicate** copies one rule, to change it slightly.
-- **Copy rules** adds another instrument's rules to this one, skipping any it
-  already has.
+- **Copy from another instrument** lists the instruments that have rules.
+  Choose one to add its rules to this instrument. Rules this instrument
+  already has are skipped.
+
+An instrument with no rules shows a single line under **Result rules**, with
+**Add rule** and **Copy from another instrument**.
 
 The result as read before any rule is always kept beside the stored one, and
 the raw data never changes. After changing a rule, reprocess older raw data to store

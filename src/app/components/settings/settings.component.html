@@ -645,17 +645,18 @@
                       </div>
                     </div>
 
-                    <div class="form-section result-rules-section">
-                      <h4>Result rules</h4>
-                      <p class="help-text">
-                        If this instrument sends a result below, store the replacement instead. The first rule that
-                        matches is used. "Failed" and "Incomplete" are never replaced. The result before rules is
-                        always kept alongside, and the raw data is never changed. A "contains" rule also matches inside
-                        numbers: "20" matches "1200".
-                      </p>
-
-                      <p class="help-text" *ngIf="!resultRulesOf(i).length">
-                        No rules: every result is stored exactly as the instrument sends it.
+                    <div class="form-section result-rules-section" [class.no-rules]="!resultRulesOf(i).length">
+                      <div class="result-rules-heading">
+                        <h4>Result rules</h4>
+                        <p class="help-text" *ngIf="!resultRulesOf(i).length">
+                          No rules: results are stored exactly as sent. A rule stores other text for a
+                          result, for example "&gt; 10000000" for "&gt; Titer max".
+                        </p>
+                      </div>
+                      <p class="help-text" *ngIf="resultRulesOf(i).length">
+                        The first rule that matches a result replaces it before it is stored. "Failed" and "Incomplete"
+                        are never replaced. The result as sent is kept alongside, and the raw data never changes.
+                        "Contains" also matches inside numbers: "20" matches "1200".
                       </p>
 
                       <div class="result-rule" *ngFor="let rule of resultRulesOf(i); let r = index; trackBy: trackByIndex"
@@ -701,19 +702,17 @@
                           <span>Add rule</span>
                         </button>
                         <ng-container *ngIf="ruleSourcesFor(i).length">
-                          <div class="custom-select-wrapper result-rules-copy">
-                            <select class="form-control" [id]="'instrument-' + i + '-rules-copy'"
-                              aria-label="Copy rules from another instrument" #copySource>
-                              <option *ngFor="let source of ruleSourcesFor(i)" [value]="source.index">
-                                {{ source.name }} ({{ source.count }} {{ source.count === 1 ? 'rule' : 'rules' }})
-                              </option>
-                            </select>
-                          </div>
-                          <button type="button" class="btn btn-sm btn-outline-secondary"
-                            (click)="copyResultRules(+copySource.value, i)">
+                          <button type="button" class="btn btn-sm btn-outline-secondary" [matMenuTriggerFor]="copyRulesMenu">
                             <i class="fas fa-clone"></i>
-                            <span>Copy rules</span>
+                            <span>Copy from another instrument</span>
+                            <i class="fas fa-caret-down"></i>
                           </button>
+                          <mat-menu #copyRulesMenu="matMenu">
+                            <button type="button" mat-menu-item *ngFor="let source of ruleSourcesFor(i)"
+                              (click)="copyResultRules(source.index, i)">
+                              {{ source.name }} ({{ source.count }} {{ source.count === 1 ? 'rule' : 'rules' }})
+                            </button>
+                          </mat-menu>
                         </ng-container>
                       </div>
                     </div>
