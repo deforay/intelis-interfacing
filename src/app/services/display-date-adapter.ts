@@ -26,7 +26,8 @@ export class DisplayDateAdapter extends NativeDateAdapter {
   override parse(value: unknown): Date | null {
     if (value instanceof Date) return value;
     if (value === null || value === undefined || value === '') return null;
-    return parseDisplayDate(String(value), this.settingsFormat) ?? this.invalid();
+    if (typeof value !== 'string') return this.invalid();
+    return parseDisplayDate(value, this.settingsFormat) ?? this.invalid();
   }
 }
 

@@ -115,6 +115,11 @@ export class HL7HelperService {
     }
   }
 
+  /** An OBX giving when a run was executed, never a result. */
+  private static isRunTimeRange(obx: any): boolean {
+    return (obx.get('OBX.2')?.toString() ?? '') === 'DR' && (obx.get('OBX.3.1')?.toString() ?? '') === 'RunTimeRange';
+  }
+
   /**
  * Finds the most appropriate OBX segment for processing HL7 test results
  * Prioritizes test result segments over metadata segments
@@ -126,7 +131,7 @@ export class HL7HelperService {
     // First try to find an OBX segment that matches this sample number in OBX.4.
     // A run-time range is never a result, whatever its OBX.4 says.
     for (const currentObx of obxArray) {
-      if ((currentObx.get('OBX.2')?.toString() ?? '') === 'DR' && (currentObx.get('OBX.3.1')?.toString() ?? '') === 'RunTimeRange') {
+      if (HL7HelperService.isRunTimeRange(currentObx)) {
         continue;
       }
       const obx4Value = currentObx.get('OBX.4')?.toString() ?? '';
@@ -137,15 +142,12 @@ export class HL7HelperService {
 
     // Look for test result OBX segments (exclude runtime/metadata segments)
     const testResultObxSegments = obxArray.filter(obx => {
-      const obxType = obx.get('OBX.2')?.toString() ?? '';
-      const obxIdentifier = obx.get('OBX.3.1')?.toString() ?? '';
-
-      // Skip runtime/metadata segments
-      if (obxType === 'DR' && obxIdentifier === 'RunTimeRange') {
+      if (HL7HelperService.isRunTimeRange(obx)) {
         return false;
       }
-
       // Look for actual test result segments (usually ST type with test identifiers)
+      const obxType = obx.get('OBX.2')?.toString() ?? '';
+      const obxIdentifier = obx.get('OBX.3.1')?.toString() ?? '';
       return obxType === 'ST' || obxIdentifier.includes('HIV') || obxIdentifier.includes('0BHIV1');
     });
 
@@ -173,10 +175,7 @@ export class HL7HelperService {
     const chosen = index >= 0 && index < obxArray.length ? obxArray[index] : null;
     // A run-time range is never a result, here either: a specimen whose pick
     // is one has no result, and its run time must not be stored as one.
-    if (chosen && (chosen.get('OBX.2')?.toString() ?? '') === 'DR' && (chosen.get('OBX.3.1')?.toString() ?? '') === 'RunTimeRange') {
-      return null;
-    }
-    return chosen;
+    return chosen && !HL7HelperService.isRunTimeRange(chosen) ? chosen : null;
   }
 
   /**

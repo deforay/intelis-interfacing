@@ -37,7 +37,7 @@ export function listTimeZones(): string[] {
   } catch {
     zones = [];
   }
-  return [...new Set(['UTC', systemTimeZone(), ...zones])].sort();
+  return [...new Set(['UTC', systemTimeZone(), ...zones])].sort((a, b) => a.localeCompare(b));
 }
 
 function zoneParts(date: Date, timeZone: string): Record<string, number> {

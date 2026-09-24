@@ -270,7 +270,7 @@ export class InstrumentInterfaceService {
     instrumentConnectionData: InstrumentConnectionStack,
     rawHl7Text: string,
     report: boolean,
-    read: (specimen: ReturnType<HL7HelperService['hl7Specimens']>[number]) => any | null,
+    read: (specimen: ReturnType<HL7HelperService['hl7Specimens']>[number]) => any,
     unreadable?: { count: number }
   ): any[] {
     const results: any[] = [];
