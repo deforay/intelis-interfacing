@@ -261,9 +261,11 @@ export class RawDataProcessorService {
 
   /**
    * `stored` when every result was stored or already stored, `empty` when the
-   * transmission has no result records (no OBX segment, no ASTM order
-   * record), `failed` otherwise. Only the absence of result records counts as
-   * empty: records that yield nothing are a failure, however they fail.
+   * transmission is certain to hold no result, `failed` otherwise. Empty is
+   * narrow on purpose, because it hides nothing only when nothing is there:
+   * an HL7 message with no OBX, SPM or OBR anywhere in it, or ASTM made only
+   * of header, patient, query, comment, manufacturer and terminator records.
+   * Anything else that yields no result is a failure, however it fails.
    */
   private async reprocessUsingInstrumentInterface(entry: any, instrumentSettings: any, options: ResultSaveOptions): Promise<ReprocessOutcome> {
     try {
@@ -280,7 +282,7 @@ export class RawDataProcessorService {
         persistenceResults = await this.withPersistenceTimeout(
           this.instrumentInterfaceService.processHL7Message(instrumentConnectionData, hl7Message, options)
         );
-        if (persistenceResults.length === 0 && !hl7Message.split('\r').some(segment => segment.startsWith('OBX|'))) {
+        if (persistenceResults.length === 0 && RawDataProcessorService.isHL7WithoutResults(hl7Message)) {
           return 'empty';
         }
       } else if (protocol === 'astm-checksum' || protocol === 'astm-nonchecksum') {
@@ -297,10 +299,10 @@ export class RawDataProcessorService {
         const astmHelper = this.instrumentInterfaceService['astmHelper'];
         let unreadableOrders = 0;
         let hl7Messages = 0;
-        let orderRecords = 0;
+        let resultBearingRecords = 0;
         for (const part of parts) {
           if (!part) continue;
-          orderRecords += part.split(/<CR>/).filter(record => /^\d*O\|/.test(record)).length;
+          resultBearingRecords += part.split(/<CR>/).filter(record => !RawDataProcessorService.isASTMRecordWithoutResults(record)).length;
           const extraction = astmHelper.extractASTMResults(part.split(/<CR>/), part);
           if (extraction.isHL7) {
             hl7Messages++;
@@ -321,7 +323,7 @@ export class RawDataProcessorService {
           this.utilsService.logger('error', `Raw data ID ${entry.id} holds HL7, but this instrument is set to ASTM; nothing was read from it`, instrumentSettings.analyzerMachineName);
           return 'failed';
         }
-        if (orderRecords === 0 && persistenceResults.length === 0) {
+        if (resultBearingRecords === 0 && persistenceResults.length === 0) {
           return 'empty';
         }
       } else {
@@ -333,6 +335,21 @@ export class RawDataProcessorService {
       this.utilsService.logger('error', `InstrumentInterface reprocessing error: ${error}`, entry.instrument_id || entry.machine);
       return 'failed';
     }
+  }
+
+  /** An HL7 message, recognisably one, with no segment that can carry a result. */
+  static isHL7WithoutResults(message: string): boolean {
+    return /(^|\r)MSH\|/.test(message) && !/OBX|SPM|OBR/.test(message);
+  }
+
+  /**
+   * An ASTM record that cannot carry a result: header, patient, query,
+   * comment, manufacturer or terminator, behind its frame number if any, or
+   * nothing at all. Every other record, including one not recognised, might.
+   */
+  static isASTMRecordWithoutResults(record: string): boolean {
+    const text = (record ?? '').trim();
+    return text === '' || /^\d*[HPQCML]\|/.test(text);
   }
 
   /**

@@ -267,6 +267,26 @@ describe('reprocessing', () => {
     expect(status).toMatchObject({ processedCount: 1, empty: 1, failed: 0 });
   });
 
+  it('counts ASTM reprocessed under an HL7 setting as a failure, not as holding no results', async () => {
+    const s = setup('hl7', 'roche-cobas-4800');
+    s.database.prepare('INSERT INTO raw_data (data, machine, instrument_id) VALUES (?, ?, ?)')
+      .run('\x021H|\\^&|||ANALYZER\rP|1\rO|1|VL0001||^^^HIV\rR|1|^^^HIV|1250|cp/mL\rL|1|N\r\x0333\r\n', 'ANALYZER-1', 'ANALYZER-1');
+
+    const status = await s.processor.reprocessMatching('sqlite', {});
+
+    expect(status).toMatchObject({ processedCount: 1, empty: 0, failed: 1 });
+  });
+
+  it('counts an ASTM session with results but no readable order as a failure', async () => {
+    const s = setup('astm-checksum', 'abbott-m2000');
+    s.database.prepare('INSERT INTO raw_data (data, machine, instrument_id) VALUES (?, ?, ?)')
+      .run('\x021H|\\^&|||m2000\rP|1\rR|1|^^^HIV|1250|cp/mL\rL|1|N\r\x0333\r\n', 'ANALYZER-1', 'ANALYZER-1');
+
+    const status = await s.processor.reprocessMatching('sqlite', {});
+
+    expect(status).toMatchObject({ processedCount: 1, empty: 0, failed: 1 });
+  });
+
   it('reprocesses only the transmissions the filter matches, a batch at a time', async () => {
     const s = setup('hl7', 'roche-cobas-4800');
     for (let i = 0; i < 25; i++) {
