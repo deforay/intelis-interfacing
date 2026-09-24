@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ChangeDetectorRef, ViewChild, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef, ViewChild, ChangeDetectionStrategy, ElementRef } from '@angular/core';
 import { Router } from '@angular/router';
 import { UtilitiesService } from '../../services/utilities.service';
 import { ConnectionManagerService } from '../../services/connection-manager.service';
@@ -140,6 +140,8 @@ export class RawDataComponent implements OnInit, OnDestroy {
 
   @ViewChild('fromModel') fromModel: NgModel;
   @ViewChild('toModel') toModel: NgModel;
+  @ViewChild('fromInput') fromInput: ElementRef<HTMLInputElement>;
+  @ViewChild('toInput') toInput: ElementRef<HTMLInputElement>;
 
   /**
    * A typed day that is not a real day in the Display Date Format. The date
@@ -169,10 +171,20 @@ export class RawDataComponent implements OnInit, OnDestroy {
   }
 
   clearFilter(): void {
+    // Empty the date fields' text and reset them, which drops a day they
+    // could not read, then show everything. Clearing is never refused.
+    for (const input of [this.fromInput, this.toInput]) {
+      if (input) input.nativeElement.value = '';
+    }
+    this.fromModel?.reset(null);
+    this.toModel?.reset(null);
     this.filter = { instrumentId: '', from: '', to: '', search: '' };
     this.fromDate = null;
     this.toDate = null;
-    this.applyFilter();
+    this.applied = {};
+    this.pageIndex = 0;
+    this.selection.clear();
+    void this.loadPage();
   }
 
   onPage(event: PageEvent): void {
