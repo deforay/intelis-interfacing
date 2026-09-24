@@ -60,3 +60,9 @@ td {
 .error-text {
   color: red;
 }
+// A quieter note after an autocomplete option, such as a time zone's offset.
+.mat-mdc-option .option-hint {
+  margin-left: 8px;
+  color: #6b7280;
+  font-size: 0.85em;
+}

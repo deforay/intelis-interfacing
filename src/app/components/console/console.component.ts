@@ -199,6 +199,11 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
 
   ngOnInit() {
     const that = this;
+    // Received On sorts by row id, the order results arrived. The stored time
+    // has no zone, so it can run backwards across a time zone change.
+    const sortValue = that.dataSource.sortingDataAccessor;
+    that.dataSource.sortingDataAccessor = (row, column) =>
+      column === 'added_on' && row?.id != null ? Number(row.id) : sortValue(row, column);
     that.visibleColumnsSubscription = that.dataSource.connect().subscribe(rows => {
       const hasNotes = rows.some(row => typeof row?.notes === 'string' && row.notes.trim() !== '');
       const columns = that.displayedColumns.filter(column => hasNotes || column !== 'notes');

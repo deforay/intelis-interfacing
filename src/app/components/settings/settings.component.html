@@ -121,6 +121,23 @@
                 <small class="help-text">How dates are shown on screen. Stored results and what the LIS receives are not changed.</small>
               </div>
 
+              <div class="form-group">
+                <label for="settingsTimeZone">Time Zone</label>
+                <input id="settingsTimeZone" type="text" formControlName="timeZone" class="form-control"
+                  placeholder="Search, e.g. Kampala or UTC+03" autocomplete="off"
+                  [matAutocomplete]="autoTimeZone">
+                <mat-autocomplete #autoTimeZone="matAutocomplete">
+                  <mat-option *ngFor="let option of filterTimeZones(settingsForm.get('commonSettings.timeZone')?.value)"
+                    [value]="option.zone">
+                    {{ option.zone }} <span class="option-hint">{{ option.offset }}</span>
+                  </mat-option>
+                </mat-autocomplete>
+                <div class="error-message" *ngIf="settingsForm.get('commonSettings.timeZone')?.invalid">
+                  Choose a time zone from the list
+                </div>
+                <small class="help-text">Used to record when a result or transmission is received. Times sent by the instrument are stored as sent.</small>
+              </div>
+
               <div class="form-group span-2">
                 <label for="settingsSqlitePath">SQLite Database Path</label>
                 <div class="input-group">

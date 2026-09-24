@@ -17,6 +17,7 @@ import { ResultWebhookService } from '../../services/result-webhook.service';
 import { normalizeResultRules, ResultRule } from '../../../../shared/result-rules';
 import { applyRecommendedProtocol, instrumentForSave, protocolMismatchWarning, savedInstrumentFormGroup } from './instrument-form';
 import { DATE_DISPLAY_FORMATS, dateDisplayFormatLabel, DEFAULT_DATE_DISPLAY_FORMAT } from '../../../../shared/date-display';
+import { isTimeZone, listTimeZones, systemTimeZone, timeZoneOffsetLabel } from '../../../../shared/time-zone';
 import { ResultWebhookSyncService } from '../../services/result-webhook-sync.service';
 import {
   isPlainHttpToAnotherHost,
@@ -188,7 +189,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
         mysqlUser: [''],
         mysqlPassword: [''],
         interfaceAutoConnect: ['yes', Validators.required],
-        dateFormat: [DEFAULT_DATE_DISPLAY_FORMAT]
+        dateFormat: [DEFAULT_DATE_DISPLAY_FORMAT],
+        timeZone: [systemTimeZone(), [Validators.required, (control: AbstractControl) => isTimeZone(control.value) ? null : { timeZone: true }]]
       }),
       lisApiSettings: this.formBuilder.group({
         url: [''],
@@ -612,6 +614,19 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   /** Each date format, labelled with today's date written that way. */
   public readonly dateFormatOptions = DATE_DISPLAY_FORMATS.map(format => ({ value: format, label: dateDisplayFormatLabel(format) }));
+
+  /** Every time zone, with its offset from UTC today. */
+  public readonly timeZoneOptions = listTimeZones().map(zone => ({ zone, offset: timeZoneOffsetLabel(zone) }));
+
+  /** Time zones whose name or offset contains the typed text. Spaces match underscores. */
+  filterTimeZones(value: string): { zone: string; offset: string }[] {
+    const typed = String(value ?? '').trim().toLowerCase().replace(/\s+/g, '_');
+    if (!typed) {
+      return this.timeZoneOptions;
+    }
+    return this.timeZoneOptions.filter(option =>
+      option.zone.toLowerCase().includes(typed) || option.offset.toLowerCase().includes(typed));
+  }
 
   trackByIndex(index: number): number {
     return index;
