@@ -144,7 +144,7 @@ describe('reprocessing a stored capture', () => {
 
       const { outcome, saved, failures } = await reprocess(capture.protocol, capture.machineType, live.raw());
 
-      expect(outcome).toEqual({ success: live.raw().length, failed: 0 });
+      expect(outcome).toMatchObject({ success: live.raw().length, failed: 0 });
       expect(failures).toEqual([]);
       expect(project(saved)).toEqual(project(live.saved()));
     });
@@ -168,7 +168,7 @@ describe('reprocessing a run that also carries a message without an order', () =
 
     const { outcome, saved, failures } = await reprocess('astm-checksum', 'abbott-m2000', live.raw());
 
-    expect(outcome).toEqual({ success: 1, failed: 0 });
+    expect(outcome).toMatchObject({ success: 1, failed: 0 });
     expect(failures).toEqual([]);
     expect(project(saved)).toEqual(project(live.saved()));
   });
@@ -184,7 +184,7 @@ describe('reprocessing HL7 stored from an instrument set to ASTM here', () => {
 
     const { outcome, saved } = await reprocess('astm-checksum', 'cepheid-genexpert', [raw]);
 
-    expect(outcome).toEqual({ success: 0, failed: 1 });
+    expect(outcome).toMatchObject({ success: 0, failed: 1 });
     expect(saved).toEqual([]);
   });
 });
@@ -208,7 +208,7 @@ describe('reprocessing a transmission with an order that cannot be read', () => 
 
     const outcome = await processor.reprocessRawData([{ id: 1, instrument_id: wire.connection.instrumentId, data: live.raw()[0] }]);
 
-    expect(outcome).toEqual({ success: 0, failed: 1 });
+    expect(outcome).toMatchObject({ success: 0, failed: 1 });
     expect(wire.saved()).toHaveLength(2);
   });
 });
@@ -259,7 +259,7 @@ describe('reprocessing after the instrument\'s settings changed', () => {
     instruments = [{ analyzerMachineName: 'NEW-NAME', analyzerMachineType: 'roche-cobas-4800', interfaceCommunicationProtocol: 'hl7', resultRules: [] }];
     const outcome = await processor.reprocessRawData([{ id: 1, instrument_id: 'NEW-NAME', data: live.raw()[0] }]);
 
-    expect(outcome).toEqual({ success: 1, failed: 0 });
+    expect(outcome).toMatchObject({ success: 1, failed: 0 });
     expect(wire.saved().map(result => [result.results, result.results_as_sent])).toEqual([['> Titer max', '> Titer max']]);
   });
 });

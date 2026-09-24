@@ -115,6 +115,27 @@ $code-bg: #f6f8fa;
     }
   }
 
+  &.btn-warning {
+    background-color: $warning-color;
+    color: white;
+
+    &:hover:not(:disabled) {
+      background-color: color.adjust($warning-color, $lightness: -8%);
+    }
+  }
+
+  &.btn-outline-secondary {
+    background-color: transparent;
+    color: $text-light;
+    border: 1px solid $border-color;
+  }
+
+  &.btn-outline-danger {
+    background-color: transparent;
+    color: $danger-color;
+    border: 1px solid $danger-color;
+  }
+
   &.btn-outline-primary {
     background-color: transparent;
     color: $primary-color;
@@ -281,6 +302,7 @@ $code-bg: #f6f8fa;
         gap: 1.5rem;
 
         .success-count,
+        .unchanged-count,
         .failed-count {
           display: flex;
           align-items: center;
@@ -297,6 +319,10 @@ $code-bg: #f6f8fa;
           color: $success-color;
         }
 
+        .unchanged-count {
+          color: $text-light;
+        }
+
         .failed-count {
           color: $danger-color;
         }
@@ -305,43 +331,66 @@ $code-bg: #f6f8fa;
   }
 }
 
-// Search section
-.search-section {
-  padding: 0 1.5rem 1.5rem;
+// Filter section
+.filter-section {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem 1rem;
+  margin: 0 1.5rem 1.5rem;
+  padding: 1rem 1.25rem;
+  background: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 
-  .search-box {
-    position: relative;
-    background: white;
-    border-radius: 0.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  .filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 10rem;
 
-    i {
-      position: absolute;
-      left: 1.25rem;
-      top: 50%;
-      transform: translateY(-50%);
+    label {
+      font-size: 0.75rem;
+      font-weight: 600;
       color: $text-light;
     }
 
-    .search-input {
-      width: 100%;
-      padding: 0.875rem 1rem 0.875rem 3rem;
-      border: 1px solid $border-color;
-      border-radius: 0.5rem;
-      font-size: 0.875rem;
-      transition: all 0.2s ease;
-
-      &:focus {
-        outline: none;
-        border-color: $primary-color;
-        box-shadow: 0 0 0 3px rgba($primary-color, 0.1);
-      }
-
-      &::placeholder {
-        color: color.adjust($text-light, $lightness: 15%);
-      }
+    &.filter-search {
+      flex: 1;
+      min-width: 14rem;
     }
   }
+
+  .form-control {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid $border-color;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+
+    &:focus {
+      outline: none;
+      border-color: $primary-color;
+      box-shadow: 0 0 0 3px rgba($primary-color, 0.1);
+    }
+  }
+
+  .filter-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .filter-note {
+    flex-basis: 100%;
+    margin: 0;
+    font-size: 0.8125rem;
+    color: $text-light;
+  }
+}
+
+.load-error {
+  margin: 0 1.5rem 1rem;
+  color: $danger-color;
+  font-size: 0.875rem;
 }
 
 // Table section

@@ -446,6 +446,17 @@
           </mat-cell>
         </ng-container>
 
+        <!-- Original Data Column -->
+        <ng-container matColumnDef="original">
+          <mat-header-cell *matHeaderCellDef class="original-cell"><span class="visually-hidden">Original data</span></mat-header-cell>
+          <mat-cell *matCellDef="let row" class="original-cell">
+            <button type="button" class="btn-original" (click)="showOriginal(row, $event)"
+              title="Show original data" aria-label="Show original data">
+              <i class="fa fa-file-code"></i>
+            </button>
+          </mat-cell>
+        </ng-container>
+
         <mat-header-row *matHeaderRowDef="visibleColumns" class="table-header"></mat-header-row>
         <mat-row *matRowDef="let row; columns: visibleColumns;" class="table-row"
           [class.unsynced-row]="row.lims_sync_status == 0 || row.lims_sync_status === '0'">

@@ -158,6 +158,11 @@ export function parseHL7Response(bytes: string): Record<string, string[]> {
   return segments;
 }
 
+const IDENTICAL_FIELDS = [
+  'order_id', 'instrument_id', 'test_id', 'test_type', 'results', 'results_as_sent', 'test_unit', 'notes', 'tested_by',
+  'analysed_date_time', 'specimen_date_time', 'authorised_date_time', 'result_accepted_date_time', 'result_status'
+];
+
 function ensureWindowRequire(): void {
   // The HL7 ACK builder reaches crypto through Electron's window.require.
   const globalObject = globalThis as any;
@@ -194,7 +199,14 @@ export function createWireHarness(options: WireHarnessOptions): WireHarness {
     recordTelemetryEvent: vi.fn(async (event: any) => {
       telemetry.push(event);
       return true;
-    })
+    }),
+    // The same comparison the database makes, over the results saved here.
+    findIdenticalResult: vi.fn(async (record: any) => savedResults.some(saved =>
+      IDENTICAL_FIELDS.every(field => (saved[field] ?? '') === (record[field] ?? ''))
+    )),
+    hasEarlierResult: vi.fn(async (record: any) => savedResults.some(saved =>
+      saved.order_id === record.order_id && (saved.test_type ?? '') === (record.test_type ?? '')
+    ))
   };
   const tcpService = {
     connectionStack: new Map<string, any>(),

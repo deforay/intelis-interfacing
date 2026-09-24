@@ -14,6 +14,14 @@
         <i class="fas fa-sync-alt" [class.fa-spin]="isReprocessing"></i>
         <span>Reprocess Selected ({{ selection.selected.length }})</span>
       </button>
+      <button type="button"
+              [disabled]="total === 0 || isReprocessing || loading"
+              (click)="reprocessAllMatching()"
+              class="btn btn-warning"
+              title="Reprocess every transmission the filter matches, on every page">
+        <i class="fas fa-layer-group"></i>
+        <span>Reprocess All {{ isFiltered ? 'Matching' : '' }} ({{ total | number }})</span>
+      </button>
       <button type="button" (click)="click()" class="btn btn-primary">
         <i class="fas fa-terminal"></i>
         <span>Back to Console</span>
@@ -61,34 +69,70 @@
         </div>
         <div class="result-counts">
           <div class="success-count">
-            <i class="fas fa-check-circle"></i>
-            <span>Success: {{ reprocessingStatus.success }}</span>
+            <i class="fas fa-plus-circle"></i>
+            <span>New results: {{ reprocessingStatus.saved }}</span>
+          </div>
+          <div class="unchanged-count">
+            <i class="fas fa-equals"></i>
+            <span>Already stored: {{ reprocessingStatus.unchanged }}</span>
           </div>
           <div class="failed-count">
             <i class="fas fa-exclamation-circle"></i>
-            <span>Failed: {{ reprocessingStatus.failed }}</span>
+            <span>Not fully read: {{ reprocessingStatus.failed }}</span>
           </div>
         </div>
       </div>
+      <button type="button" class="btn btn-sm btn-outline-danger" (click)="cancelReprocessing()">
+        <i class="fas fa-stop"></i>
+        <span>Stop</span>
+      </button>
     </div>
   </div>
 
-  <!-- Search Section -->
-  <div class="search-section">
-    <div class="search-box">
-      <i class="fas fa-search"></i>
-      <label for="rawDataSearch" class="visually-hidden">Search raw data</label>
-      <input id="rawDataSearch" #searchInput
-             type="text"
-             (keyup)="filterData($event)"
-             placeholder="Search by machine name, date, or data content..."
-             class="search-input">
+  <!-- Filter Section -->
+  <form class="filter-section" (ngSubmit)="applyFilter()">
+    <div class="filter-field">
+      <label for="rawDataInstrument">Instrument</label>
+      <select id="rawDataInstrument" name="instrumentId" class="form-control" [(ngModel)]="filter.instrumentId">
+        <option value="">All instruments</option>
+        <option *ngFor="let name of instrumentNames" [value]="name">{{ name }}</option>
+      </select>
     </div>
-  </div>
+    <div class="filter-field">
+      <label for="rawDataFrom">Received from</label>
+      <input id="rawDataFrom" name="from" type="date" class="form-control" [(ngModel)]="filter.from">
+    </div>
+    <div class="filter-field">
+      <label for="rawDataTo">Received to</label>
+      <input id="rawDataTo" name="to" type="date" class="form-control" [(ngModel)]="filter.to">
+    </div>
+    <div class="filter-field filter-search">
+      <label for="rawDataSearch">Contains</label>
+      <input id="rawDataSearch" name="search" type="text" class="form-control"
+             [(ngModel)]="filter.search"
+             placeholder="Sample ID or any text in the data">
+    </div>
+    <div class="filter-actions">
+      <button type="submit" class="btn btn-primary" [disabled]="invalidRange || loading">
+        <i class="fas fa-filter"></i>
+        <span>Apply</span>
+      </button>
+      <button type="button" class="btn btn-outline-secondary" (click)="clearFilter()" [disabled]="loading">
+        <span>Clear</span>
+      </button>
+    </div>
+    <p class="filter-note" *ngIf="invalidRange">The first day is after the last day.</p>
+    <p class="filter-note" *ngIf="!invalidRange">
+      {{ total | number }} transmission{{ total === 1 ? '' : 's' }}{{ isFiltered ? ' match' : '' }},
+      read from {{ store === 'mysql' ? 'the MySQL database' : 'this computer\'s database' }}.
+      Days are compared with the received time as shown below.
+    </p>
+  </form>
+  <div *ngIf="loadError" class="load-error">{{ loadError }}</div>
 
   <!-- Data Table Section -->
   <div class="table-section">
-    <mat-table [dataSource]="dataSource" matSort class="data-table">
+    <mat-table [dataSource]="dataSource" class="data-table">
       <!-- Checkbox Column -->
       <ng-container matColumnDef="select">
         <mat-header-cell *matHeaderCellDef class="checkbox-cell">
@@ -107,7 +151,7 @@
 
       <!-- Machine Column -->
       <ng-container matColumnDef="machine">
-        <mat-header-cell *matHeaderCellDef mat-sort-header>
+        <mat-header-cell *matHeaderCellDef>
           <i class="fas fa-microscope"></i>&nbsp;Machine
         </mat-header-cell>
         <mat-cell *matCellDef="let row">
@@ -117,7 +161,7 @@
 
       <!-- Added On Column -->
       <ng-container matColumnDef="added_on">
-        <mat-header-cell *matHeaderCellDef mat-sort-header>
+        <mat-header-cell *matHeaderCellDef>
           <i class="fas fa-clock"></i>&nbsp;Added On
         </mat-header-cell>
         <mat-cell *matCellDef="let row">
@@ -127,7 +171,7 @@
 
       <!-- Data Column -->
       <ng-container matColumnDef="data">
-        <mat-header-cell *matHeaderCellDef mat-sort-header>
+        <mat-header-cell *matHeaderCellDef>
           <i class="fas fa-code"></i>&nbsp;Data
         </mat-header-cell>
         <mat-cell *matCellDef="let row" class="data-cell">
@@ -182,12 +226,15 @@
     <div *ngIf="dataSource.data.length === 0" class="empty-state">
       <i class="fas fa-database"></i>
       <h3>No Raw Data Found</h3>
-      <p>{{ searchInput?.value ? 'Try adjusting your search criteria' : 'Raw data will appear here as it\'s received' }}</p>
+      <p>{{ isFiltered ? 'Nothing matches this filter' : 'Raw data will appear here as it\'s received' }}</p>
     </div>
 
     <!-- Pagination -->
-    <mat-paginator [pageSizeOptions]="[50, 100, 250, 500]"
-                   [pageSize]="100"
+    <mat-paginator [pageSizeOptions]="[25, 50, 100]"
+                   [pageSize]="pageSize"
+                   [pageIndex]="pageIndex"
+                   [length]="total"
+                   (page)="onPage($event)"
                    showFirstLastButtons
                    class="table-pagination">
     </mat-paginator>

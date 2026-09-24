@@ -444,10 +444,14 @@ export class HL7HelperService {
    * is what every analyzer captured so far sends. A message whose results come
    * before its first specimen cannot be split that way and is read as a
    * whole, as it always was.
+   *
+   * Each specimen also carries `text`, the segments it was read from, which
+   * is what its result keeps as raw text: its own group behind the header,
+   * or the whole message when the message is read whole.
    */
-  hl7Specimens(rawHl7Text: string, message: Message): { spm: any; obx: any[]; message: Message; grouped: boolean }[] {
+  hl7Specimens(rawHl7Text: string, message: Message): { spm: any; obx: any[]; message: Message; grouped: boolean; text: string }[] {
     const specimens = message.get('SPM').toArray();
-    const wholeMessage = () => specimens.map(spm => ({ spm, obx: message.get('OBX').toArray(), message, grouped: false }));
+    const wholeMessage = () => specimens.map(spm => ({ spm, obx: message.get('OBX').toArray(), message, grouped: false, text: rawHl7Text }));
     if (specimens.length <= 1) {
       return wholeMessage();
     }
@@ -480,12 +484,14 @@ export class HL7HelperService {
       // OBR, when it has one, is the one its test type is read from.
       const ownOrder = group.some(segment => segment.startsWith('OBR|'));
       const specimenHeader = ownOrder ? header.filter(segment => !segment.startsWith('OBR|')) : header;
-      const specimenMessage = this.createHL7Message([...specimenHeader, ...group].join('\r'));
+      const text = [...specimenHeader, ...group].join('\r');
+      const specimenMessage = this.createHL7Message(text);
       return {
         spm: specimenMessage.get('SPM').toArray()[0],
         obx: specimenMessage.get('OBX').toArray(),
         message: specimenMessage,
-        grouped: true
+        grouped: true,
+        text
       };
     });
   }

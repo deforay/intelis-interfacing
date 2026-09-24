@@ -4,6 +4,15 @@ Every transmission an analyzer sends is stored exactly as it arrived, before
 the tool tries to understand it. **Console → View Raw Data** shows them: which
 instrument, when, and the transmission itself.
 
+The tool stores each transmission once, with an identifier and a SHA-256
+fingerprint of its content. Every result read from a transmission carries its
+identifier. The result keeps only its own records, not a copy of the whole
+transmission.
+
+To see where a result came from, press **Show original data**, the file icon
+at the end of its row in the console. The window shows the result's records and the whole transmission. It
+also shows whether the transmission still matches its fingerprint.
+
 That record exists for one reason. If the tool ever read a transmission wrongly,
 the analyzer does not have to send it again — the result can be worked out from
 what was stored, once the reading is fixed.
@@ -22,25 +31,45 @@ what was stored, once the reading is fixed.
 1. Upgrade first. Reprocessing reads transmissions with the version you are
    running now, so on an old version it reproduces the same wrong reading.
 2. Open **Console → View Raw Data**.
-3. Find the transmissions. The search box matches the instrument, the date, and
-   the content of the transmission itself, so a sample ID finds the
-   transmission that carried it.
-4. Tick them, and press **Reprocess Selected**. A single transmission can also
-   be reprocessed from the button on its row.
-5. Progress is shown as it goes, with a count of what succeeded and what failed.
+3. Fill in the filter fields you need:
+    - **Instrument**: one instrument, or all of them.
+    - **Received from** and **Received to**: the first and last day. Both days
+      are included. The days are compared with the received time the list
+      shows.
+    - **Contains**: text in the transmission, such as a sample ID.
+4. Press **Apply**. The count under the filter covers every matching
+   transmission, on all pages.
+5. Choose what to reprocess:
+    - To reprocess some transmissions, tick them and press **Reprocess Selected**.
+    - To reprocess every matching transmission, press **Reprocess All
+      Matching**. It works through them oldest first.
+    - To reprocess one transmission, press **Reprocess** on its row.
+6. Watch the progress card. It counts transmissions done, new results, results
+   already stored, and transmissions not fully read. A transmission that holds
+   no results, such as an analyzer's order query, counts as not fully read.
+7. To end a run early, press **Stop**. The run stops after the current
+   transmission. Results it already stored stay stored.
 
-!!! warning "Reprocessing adds results. It does not correct the ones already there."
+A run does not include transmissions that arrive after it starts.
 
-    Each reprocessed transmission is stored as a **new** result. The earlier,
-    wrong result stays exactly where it is, and both then appear in the results
-    table under the same sample ID — one wrong, one right.
+!!! warning "Reprocessing stores changed results as new results. It does not correct stored ones."
 
-    The new results are also queued for the LIS as new results, which for a
-    sample the LIS has already taken may not be what anyone wants.
+    Reprocessing reads each transmission again with the current version and
+    settings. If a result is already stored exactly as read, reprocessing
+    does not store it or send it to the LIS again. Exactly means the same
+    sample, test, value, unit, notes, operator and times. Reprocessing a range
+    that is already right changes nothing.
 
-    So before reprocessing a run of any size, agree with whoever runs the LIS
-    what should happen to the results it has already accepted. On a handful of
-    samples this is a conversation. On several hundred it is a plan.
+    If a result reads differently, reprocessing stores it as a **new** result
+    and queues it for the LIS. The earlier result stays where it is. The
+    results table then shows both under the same sample ID. If the sample
+    already had a result for the same test, the new result has
+    `repeated = 1`.
+
+    A new result for a sample the LIS already accepted may not be wanted.
+    Before you reprocess a run of any size, agree with whoever runs the LIS
+    what happens to results the LIS already accepted. For a handful of
+    samples, this is a conversation. For several hundred, it is a plan.
 
 ## Recovering from the framing defect in versions before 4.2.0
 
@@ -64,7 +93,9 @@ Nothing was lost. The transmissions were stored intact, and every one of those
 3. **Agree the plan with your LIS** — see the warning above. The affected
    samples already went across as blank or truncated, and correcting them is
    the LIS's business as much as this tool's.
-4. **Then reprocess the rest**, in batches you can check.
+4. **Then reprocess the rest** in batches. Filter to one day or one
+   instrument, press **Reprocess All Matching**, and check the results before
+   the next batch.
 
 !!! tip "How to tell whether you are affected"
 
@@ -72,3 +103,42 @@ Nothing was lost. The transmissions were stored intact, and every one of those
     stray characters, or units that read like `co` or `cop` rather than
     `copies/mL`. Sort by sample ID: an affected run tends to show a stretch of
     them together, because the analyzer was behaving consistently.
+
+## Reclaiming database space
+
+Versions before 4.8.0 stored a copy of the whole transmission on every result
+read from it. An analyzer that sends a batch in one message multiplies that
+copy. A cobas 4800 run of 94 samples stored 94 copies of a 56 KB message. One
+laboratory's database grew to 3.8 GB this way, and copies made up 3.35 GB of
+it.
+
+To reclaim the space:
+
+1. Take a backup. See [backup and restore](backup-restore.md).
+2. Wait until no analyzer is sending. A result that arrives during the final
+   rewrite waits for it, and the console can report it as not saved although
+   it is saved.
+3. Open **Settings → Troubleshooting**.
+4. In the **Storage** card, press **Show Storage Use** to see the current
+   sizes.
+5. Press **Compact Storage**.
+6. Read the confirmation, then press **Compact Storage** again.
+
+Compact Storage makes these changes:
+
+- It links each older result to the stored transmission it came from.
+- It replaces the result's copy with the result's own records. It does this
+  only when every record of the copy is in the stored transmission.
+- It leaves the copy whole in three cases: the transmission is not stored,
+  the result has no sample ID, or the result does not match a single run in
+  the transmission.
+- It never changes or removes a stored transmission, and sends no result to
+  the LIS again.
+- It covers this computer's database and, when one is configured, the MySQL
+  database.
+- It rewrites each database at the end, so the freed space returns to the
+  disk. The rewrite needs free disk space about the size of the compacted
+  database.
+
+On that laboratory's database, Compact Storage linked 62,332 of 63,003 results
+in a few minutes. The database shrank from 3.4 GB to 113 MB.

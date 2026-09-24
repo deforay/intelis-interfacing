@@ -820,6 +820,32 @@ try {
       });
     });
 
+    // VACUUM rewrites the whole file, so it runs here, where no query
+    // timeout applies, and the WAL is truncated after it so the space
+    // really leaves the disk.
+    ipcMain.handle('sqlite3-vacuum', () => {
+      return new Promise((resolve, reject) => {
+        if (!sqlite3Obj) {
+          reject(new Error('SQLite database not initialized'));
+          return;
+        }
+
+        sqlite3Obj.run('VACUUM', (vacuumError) => {
+          if (vacuumError) {
+            log.error(`SQLite VACUUM failed: ${vacuumError.message || vacuumError}`);
+            reject(vacuumError);
+            return;
+          }
+          sqlite3Obj.run('PRAGMA wal_checkpoint(TRUNCATE)', (checkpointError) => {
+            if (checkpointError) {
+              log.warn(`SQLite WAL truncate after VACUUM failed: ${checkpointError.message || checkpointError}`);
+            }
+            resolve({ success: true });
+          });
+        });
+      });
+    });
+
     ipcMain.handle('force-rerun-migrations', async () => {
       store.set(FORCE_MIGRATION_REPLAY_KEY, true);
 

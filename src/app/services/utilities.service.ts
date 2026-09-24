@@ -25,8 +25,6 @@ export class UtilitiesService {
   lastOrders = this.lastOrdersSubject.asObservable();
 
 
-  protected lastrawDataSubject = new BehaviorSubject([]);
-  lastrawData = this.lastrawDataSubject.asObservable();
 
   constructor(
     private readonly electronService: ElectronService,
@@ -238,17 +236,6 @@ export class UtilitiesService {
   fetchRecentResults(searchParam?: string): Observable<any[]> {
     const trimmedSearchParam = (searchParam || '').trim();
     return this.dbService.fetchRecentResults(trimmedSearchParam);
-  }
-
-
-  fetchrawData(searchParam: string = '') {
-    const that = this;
-    this.dbService.fetchrawData((res) => {
-      res = [res];
-      that.lastrawDataSubject.next(res);
-    }, (err) => {
-      that.logger('error', 'Failed to fetch raw data ' + JSON.stringify(err), null);
-    }, searchParam)
   }
 
 

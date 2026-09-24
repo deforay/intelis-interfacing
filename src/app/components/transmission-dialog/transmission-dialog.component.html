@@ -1,0 +1,43 @@
+<div class="transmission-dialog">
+  <header class="dialog-header">
+    <div>
+      <h2>Original data for {{ result.order_id }}</h2>
+      <p class="subtitle">{{ result.test_type }} · {{ result.results }} · received {{ result.added_on | displayDateTime }}</p>
+    </div>
+    <button type="button" class="btn-close" (click)="close()" aria-label="Close">
+      <i class="fas fa-times"></i>
+    </button>
+  </header>
+
+  <section>
+    <h3>This result's records</h3>
+    <pre class="records">{{ visible(result.raw_text) || 'No records were kept with this result.' }}</pre>
+  </section>
+
+  <section>
+    <h3>The transmission as it arrived</h3>
+    <p *ngIf="!result.transmission_id" class="notice">
+      This result is not linked to its transmission yet. If the transmission is still stored, Compact Storage in
+      Settings links it. Until then, search the Raw Data page for the sample ID.
+    </p>
+    <p *ngIf="loading" class="notice">Reading the stored transmission…</p>
+    <p *ngIf="lookupFailed" class="notice warning">The stored transmission could not be read.</p>
+    <p *ngIf="result.transmission_id && !loading && !lookupFailed && !transmission" class="notice warning">
+      The transmission this result came from is not in this computer's database or the MySQL database.
+    </p>
+    <ng-container *ngIf="transmission">
+      <p class="fingerprint" [ngClass]="fingerprint">
+        <ng-container [ngSwitch]="fingerprint">
+          <span *ngSwitchCase="'match'"><i class="fas fa-check-circle"></i> Unchanged since it was stored (SHA-256 matches).</span>
+          <span *ngSwitchCase="'mismatch'"><i class="fas fa-exclamation-triangle"></i> Changed since it was stored: the SHA-256 does not match.</span>
+          <span *ngSwitchDefault>Stored before fingerprints were kept.</span>
+        </ng-container>
+        <span class="meta">
+          {{ transmission.instrument_id || transmission.machine }} · received {{ transmission.added_on | displayDateTime }} ·
+          {{ transmission.store === 'mysql' ? 'MySQL' : 'this computer' }}
+        </span>
+      </p>
+      <pre class="transmission">{{ visible(transmission.data) }}</pre>
+    </ng-container>
+  </section>
+</div>

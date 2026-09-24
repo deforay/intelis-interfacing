@@ -78,7 +78,7 @@ describe('InstrumentInterfaceService HL7 streams', () => {
     const keyB = '10.0.0.2:5002:tcpserver:hl7';
     tcpService.connectionStack.set(keyA, createConnection('ANALYZER-A'));
     tcpService.connectionStack.set(keyB, createConnection('ANALYZER-B'));
-    const processSpy = vi.spyOn(service, 'processHL7Data').mockImplementation(() => undefined);
+    const processSpy = vi.spyOn(service, 'processHL7Message').mockImplementation(() => undefined);
 
     service.handleTCPResponse(keyA, Buffer.from('MSH|^~\\&|A|LAB|'));
     service.handleTCPResponse(keyB, Buffer.from('MSH|^~\\&|B|LAB|RESULT-B\x1c'));
@@ -104,7 +104,7 @@ describe('InstrumentInterfaceService HL7 streams', () => {
     const { service, dbService, tcpService } = createService();
     const key = '10.0.0.1:5001:tcpserver:hl7';
     tcpService.connectionStack.set(key, createConnection('ANALYZER-A'));
-    const processSpy = vi.spyOn(service, 'processHL7Data').mockImplementation(() => undefined);
+    const processSpy = vi.spyOn(service, 'processHL7Message').mockImplementation(() => undefined);
 
     service.handleTCPResponse(key, Buffer.from('MSH|^~\\&|A|LAB|PARTIAL'));
 
@@ -117,7 +117,7 @@ describe('InstrumentInterfaceService HL7 streams', () => {
     const { service, tcpService } = createService();
     const key = '10.0.0.1:5001:tcpserver:hl7';
     tcpService.connectionStack.set(key, createConnection('ANALYZER-A'));
-    const processSpy = vi.spyOn(service, 'processHL7Data').mockImplementation(() => undefined);
+    const processSpy = vi.spyOn(service, 'processHL7Message').mockImplementation(() => undefined);
 
     service.handleTCPResponse(key, Buffer.from('NOT-HL7\x1c'));
     service.handleTCPResponse(key, Buffer.from('MSH|^~\\&|A|LAB|VALID\x1c'));
@@ -179,7 +179,7 @@ describe('InstrumentInterfaceService HL7 streams', () => {
     const { service, tcpService } = createService();
     const key = '10.0.0.1:5001:tcpserver:hl7';
     tcpService.connectionStack.set(key, createConnection('ANALYZER-A'));
-    const processSpy = vi.spyOn(service, 'processHL7Data').mockImplementation(() => undefined);
+    const processSpy = vi.spyOn(service, 'processHL7Message').mockImplementation(() => undefined);
 
     service.handleTCPResponse(key, Buffer.from('\x0bMSH|^~\\&|A|LAB|FIRST\x1c\r\x0bMSH|^~\\&|A|LAB|SECOND\x1c\r'));
 
@@ -194,7 +194,7 @@ describe('InstrumentInterfaceService HL7 streams', () => {
     const { service, tcpService } = createService();
     const key = '10.0.0.1:5001:tcpserver:hl7';
     tcpService.connectionStack.set(key, createConnection('ANALYZER-A'));
-    const processSpy = vi.spyOn(service, 'processHL7Data').mockImplementation(() => undefined);
+    const processSpy = vi.spyOn(service, 'processHL7Message').mockImplementation(() => undefined);
 
     service.handleTCPResponse(key, Buffer.from('\x0bMSH|^~\\&|A|LAB|FIRST\x1c'));
     service.handleTCPResponse(key, Buffer.from('\r\x0bMSH|^~\\&|A|LAB|SEC'));
