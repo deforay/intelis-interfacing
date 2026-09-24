@@ -262,9 +262,9 @@ export class InstrumentInterfaceService {
   }
 
   /**
-   * Reads each specimen with `read`. A specimen that cannot be read is
-   * reported, counted in `unreadable` and skipped, so it does not take the
-   * results of the other specimens in the message with it.
+   * Reads each specimen with `read`. A specimen that cannot be read, or has
+   * no result, is reported, counted in `unreadable` and skipped, so it does
+   * not take the results of the other specimens in the message with it.
    */
   private readEachSpecimen(
     instrumentConnectionData: InstrumentConnectionStack,
@@ -279,6 +279,9 @@ export class InstrumentInterfaceService {
         const result = read(specimen);
         if (result) {
           results.push(result);
+        } else if (unreadable) {
+          // The reader found no result in the specimen, and has said so.
+          unreadable.count++;
         }
       } catch (error) {
         if (unreadable) {

@@ -163,14 +163,18 @@ export class HL7HelperService {
       return testResultObxSegments[testResultObxSegments.length - 1];
     }
 
-    // FALLBACK: Use the original logic but prefer later OBX segments (which typically contain results)
+    // FALLBACK: Use the original logic but prefer later OBX segments (which typically contain results).
+    // A run-time range is excluded here too: a specimen that has only one has
+    // no result, and its run time must not be stored as one.
+    const candidates = obxArray.filter(obx =>
+      !((obx.get('OBX.2')?.toString() ?? '') === 'DR' && (obx.get('OBX.3.1')?.toString() ?? '') === 'RunTimeRange'));
     let index = (sampleNumber * 2) - 1;
-    if (index >= obxArray.length) {
+    if (index >= candidates.length) {
       // Instead of defaulting to index 0, prefer the last OBX segment
-      index = obxArray.length - 1;
+      index = candidates.length - 1;
     }
 
-    return index >= 0 && index < obxArray.length ? obxArray[index] : null;
+    return index >= 0 && index < candidates.length ? candidates[index] : null;
   }
 
   /**
