@@ -23,6 +23,23 @@ describe('HL7HelperService', () => {
     service = new HL7HelperService(utilitiesServiceStub as any);
   });
 
+  describe('choosing a specimen\'s result OBX when no other rule applies', () => {
+    const runTime = (setId: string) => createObxSegment({ 'OBX.2': 'DR', 'OBX.3.1': 'RunTimeRange', 'OBX.4': setId, 'OBX.5.1': '20260612163740' });
+    const glucose = (setId: string, value: string) => createObxSegment({ 'OBX.2': 'NM', 'OBX.3.1': 'GLUCOSE', 'OBX.4': setId, 'OBX.5.1': value });
+
+    it('gives each specimen of a shared results section its own result', () => {
+      const shared = [runTime('1.0'), glucose('1.1', '10'), runTime('2.0'), glucose('2.1', '20')];
+
+      expect(service.findAppropriateHL7OBXSegment(shared, 1).get('OBX.5.1').toString()).toBe('10');
+      expect(service.findAppropriateHL7OBXSegment(shared, 2).get('OBX.5.1').toString()).toBe('20');
+    });
+
+    it('finds no result in a specimen with only a run-time range', () => {
+      expect(service.findAppropriateHL7OBXSegment([runTime('1.0')], 1)).toBeNull();
+      expect(service.findAppropriateHL7OBXSegment([runTime('1.0')], 3)).toBeNull();
+    });
+  });
+
   it('maps Roche BT OBX-8 flag to Target Not Detected when OBX-5 is empty', () => {
     const obx = createObxSegment({
       'OBX.5.1': '',

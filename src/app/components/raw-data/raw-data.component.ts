@@ -9,6 +9,7 @@ import { MatPaginator, PageEvent } from '@angular/material/paginator';
 import { MatTableDataSource } from '@angular/material/table';
 import { SelectionModel } from '@angular/cdk/collections';
 import { Subscription } from 'rxjs';
+import { NgModel } from '@angular/forms';
 import { DateAdapter, MAT_DATE_FORMATS } from '@angular/material/core';
 import { DISPLAY_DATE_FORMATS, DisplayDateAdapter } from '../../services/display-date-adapter';
 import { DEFAULT_DATE_DISPLAY_FORMAT, formatDisplayDate, isDateDisplayFormat } from '../../../../shared/date-display';
@@ -137,10 +138,15 @@ export class RawDataComponent implements OnInit, OnDestroy {
     return !!(this.applied.instrumentId || this.applied.from || this.applied.to || this.applied.search);
   }
 
-  /** A typed day that is not a real day in the Display Date Format. */
+  @ViewChild('fromModel') fromModel: NgModel;
+  @ViewChild('toModel') toModel: NgModel;
+
+  /**
+   * A typed day that is not a real day in the Display Date Format. The date
+   * field reports it as a parse error; its value is then empty.
+   */
   get invalidDay(): boolean {
-    const invalid = (date: Date | null) => date instanceof Date && Number.isNaN(date.getTime());
-    return invalid(this.fromDate) || invalid(this.toDate);
+    return !!(this.fromModel?.errors?.['matDatepickerParse'] || this.toModel?.errors?.['matDatepickerParse']);
   }
 
   get invalidRange(): boolean {

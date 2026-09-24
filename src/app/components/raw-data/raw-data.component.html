@@ -106,7 +106,7 @@
       <label for="rawDataFrom">Received from</label>
       <div class="date-input">
         <input id="rawDataFrom" name="from" class="form-control" autocomplete="off" [placeholder]="dateFormat"
-               [matDatepicker]="fromPicker" [ngModel]="fromDate" (ngModelChange)="setFrom($event)">
+               [matDatepicker]="fromPicker" [ngModel]="fromDate" (ngModelChange)="setFrom($event)" #fromModel="ngModel">
         <mat-datepicker-toggle [for]="fromPicker"></mat-datepicker-toggle>
         <mat-datepicker #fromPicker></mat-datepicker>
       </div>
@@ -115,7 +115,7 @@
       <label for="rawDataTo">Received to</label>
       <div class="date-input">
         <input id="rawDataTo" name="to" class="form-control" autocomplete="off" [placeholder]="dateFormat"
-               [matDatepicker]="toPicker" [ngModel]="toDate" (ngModelChange)="setTo($event)">
+               [matDatepicker]="toPicker" [ngModel]="toDate" (ngModelChange)="setTo($event)" #toModel="ngModel">
         <mat-datepicker-toggle [for]="toPicker"></mat-datepicker-toggle>
         <mat-datepicker #toPicker></mat-datepicker>
       </div>
