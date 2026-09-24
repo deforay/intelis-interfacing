@@ -26,7 +26,8 @@ function sampleSettings(): any {
     encryptionKey: 'top-level-key',
     intelisConnection: { encryptedCredential: 'ciphertext' },
     sourceInstallationId: 'source-id',
-    resultWebhook: { enabled: true, url: 'http://engine.example.test/results', encryptedSecret: 'sealed' }
+    resultWebhook: { enabled: true, url: 'http://engine.example.test/results', encryptedSecret: 'sealed' },
+    storageCompacted: { sqlite: '2026-09-24T09:00:00.000Z' }
   };
 }
 
@@ -55,6 +56,7 @@ describe('settings export preparation', () => {
       expect(settings.intelisConnection).toBeUndefined();
       expect(settings.sourceInstallationId).toBeUndefined();
       expect(settings.resultWebhook).toBeUndefined();
+      expect(settings.storageCompacted).toBeUndefined();
     });
   });
 
