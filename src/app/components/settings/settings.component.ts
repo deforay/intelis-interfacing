@@ -877,6 +877,11 @@ export class SettingsComponent implements OnInit, OnDestroy {
     }
   }
 
+  /** Progress of the compaction the tool runs by itself after an upgrade. */
+  public get backgroundCompaction$() {
+    return this.rawDataProcessor.backgroundCompaction$;
+  }
+
   public stopStorageCompaction(): void {
     this.rawDataProcessor.cancel();
   }

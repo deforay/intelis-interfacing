@@ -114,7 +114,19 @@ copy. A cobas 4800 run of 94 samples stored 94 copies of a 56 KB message. One
 laboratory's database grew to 3.8 GB this way, and copies made up 3.35 GB of
 it.
 
-To reclaim the space:
+The tool compacts these copies by itself. About two minutes after it starts,
+it links each older result to its stored transmission and keeps only the
+result's own records. It does this once for this computer's database, and once
+for the MySQL database when one is configured and answers. It runs in the
+background while results keep arriving. **Settings → Troubleshooting →
+Storage** shows its progress, and the application log records what it did.
+If the tool closes first, it starts again at the next start.
+
+The automatic run does not rewrite the database. The freed space is reused for
+new data, so the file stops growing, but it does not shrink. Compact Storage
+does both steps and gives the space back to the disk.
+
+To reclaim the space on the disk:
 
 1. Take a backup. See [backup and restore](backup-restore.md).
 2. Wait until no analyzer is sending. A result that arrives during the final

@@ -1015,9 +1015,10 @@
             <div class="card-body">
               <p class="help-text">
                 Results stored before this version each keep a copy of their whole transmission. Those copies fill
-                the database. Compact Storage links each of these results to its stored transmission and keeps only
-                the result's own records. A result whose transmission is not stored keeps its copy. Compact Storage
-                never changes or removes a stored transmission.
+                the database. The tool links each of these results to its stored transmission and keeps only the
+                result's own records. It does this once, by itself, a few minutes after it starts. A result whose
+                transmission is not stored keeps its copy. Stored transmissions are never changed or removed.
+                Compact Storage does the same at once, and also gives the freed space back to the disk.
               </p>
               <table class="storage-usage" *ngIf="storageUsage">
                 <tr>
@@ -1063,6 +1064,11 @@
                 {{ compactionProgress.store === 'mysql' ? 'MySQL' : 'This computer' }}: read
                 {{ compactionProgress.transmissionsRead | number }} of {{ compactionProgress.totalTransmissions | number }}
                 transmissions, {{ compactionProgress.linkedResults | number }} results linked.
+              </p>
+              <p class="housekeeping-status" *ngIf="backgroundCompaction$ | async as background">
+                Compacting in the background ({{ background.store === 'mysql' ? 'MySQL' : 'this computer' }}): read
+                {{ background.transmissionsRead | number }} of {{ background.totalTransmissions | number }}
+                transmissions, {{ background.linkedResults | number }} results linked.
               </p>
               <p class="housekeeping-status" *ngIf="storageMessage">{{ storageMessage }}</p>
             </div>

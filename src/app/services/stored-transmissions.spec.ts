@@ -40,6 +40,7 @@ interface Setup {
   service: InstrumentInterfaceService;
   processor: RawDataProcessorService;
   connection: any;
+  store: { get(key: string): any; set: ReturnType<typeof vi.fn> };
   receive(bytes: string): Promise<void>;
   rows(sql: string, params?: any[]): any[];
   setInstrument(changes: Record<string, unknown>): void;
@@ -60,9 +61,10 @@ function setup(protocol: 'hl7' | 'astm-checksum', machineType: string): Setup {
     interfaceCommunicationProtocol: protocol,
     labName: 'LAB001'
   };
+  const saved: Record<string, any> = {};
   const store = {
-    get: (key: string) => key === 'instrumentsConfig' ? [instrument] : undefined,
-    set: vi.fn()
+    get: (key: string) => key === 'instrumentsConfig' ? [instrument] : saved[key],
+    set: vi.fn((key: string, value: any) => { saved[key] = value; })
   };
 
   // The real service without its constructor, which would start the
@@ -116,6 +118,7 @@ function setup(protocol: 'hl7' | 'astm-checksum', machineType: string): Setup {
     service,
     processor,
     connection,
+    store,
     rows,
     setInstrument: changes => Object.assign(instrument, changes),
     async receive(bytes: string) {
@@ -373,6 +376,61 @@ describe('compacting storage', () => {
       insert.run(result.order_id, result.test_id, result.test_type, result.results, result.results, message, resultStoredAt);
     }
   }
+
+  /** Starts the background compaction now and waits for it to end. */
+  async function compactInBackground(s: Setup) {
+    s.processor.scheduleAutomaticCompaction(0);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await (s.processor as any).backgroundRun;
+  }
+
+  it('compacts older results by itself, once', async () => {
+    const s = setup('hl7', 'roche-cobas-4800');
+    storeAsOldBuild(s, COBAS_4800_MESSAGE, '2025-08-17 04:00:00', '2025-08-17 04:00:02');
+
+    await compactInBackground(s);
+
+    const [transmission] = s.rows('SELECT transmission_id FROM raw_data');
+    expect(s.rows('SELECT transmission_id FROM orders').every(row => row.transmission_id === transmission.transmission_id)).toBe(true);
+    const walk = vi.spyOn(s.dbService, 'countUnlinkedResults');
+    await compactInBackground(s);
+    expect(walk).not.toHaveBeenCalled();
+  });
+
+  it('records a database with nothing to link without reading its transmissions', async () => {
+    const s = setup('hl7', 'roche-cobas-4800');
+    await s.receive(mllp(COBAS_4800_MESSAGE));
+    const read = vi.spyOn(s.dbService, 'nextRawDataBatch');
+
+    await compactInBackground(s);
+
+    expect(read).not.toHaveBeenCalled();
+    expect(s.store.set).toHaveBeenCalledWith('storageCompacted', { sqlite: expect.any(String) });
+  });
+
+  it('gives way when stopped, and compacts again at the next start', async () => {
+    const s = setup('hl7', 'roche-cobas-4800');
+    storeAsOldBuild(s, COBAS_4800_MESSAGE, '2025-08-17 04:00:00', '2025-08-17 04:00:02');
+    let release: () => void = () => {};
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const read = s.dbService.nextRawDataBatch.bind(s.dbService);
+    const slowRead = vi.spyOn(s.dbService, 'nextRawDataBatch').mockImplementationOnce(async (...args: any[]) => {
+      await gate;
+      return read(...args);
+    });
+
+    s.processor.scheduleAutomaticCompaction(0);
+    await vi.waitFor(() => expect(slowRead).toHaveBeenCalled());
+    const stopped = s.processor.stopBackgroundCompaction();
+    release();
+    await stopped;
+
+    expect(s.rows('SELECT transmission_id FROM orders WHERE transmission_id IS NOT NULL')).toHaveLength(0);
+    expect(s.store.set).not.toHaveBeenCalledWith('storageCompacted', expect.anything());
+
+    await compactInBackground(s);
+    expect(s.rows('SELECT transmission_id FROM orders WHERE transmission_id IS NULL')).toHaveLength(0);
+  });
 
   it('links each result to its transmission and keeps only its own segments', async () => {
     const s = setup('hl7', 'roche-cobas-4800');

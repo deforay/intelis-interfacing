@@ -1861,6 +1861,12 @@ export class DatabaseService {
     };
   }
 
+  /** Results that still carry a copy of their transmission and no link to it. */
+  public async countUnlinkedResults(store: RawDataStore): Promise<number> {
+    const [row] = await this.runOn(store, 'SELECT COUNT(*) AS unlinked FROM orders WHERE transmission_id IS NULL AND raw_text IS NOT NULL');
+    return Number(row?.unlinked ?? 0);
+  }
+
   /**
    * Gives back to the disk the space freed inside a database: SQLite keeps
    * freed pages in its file until VACUUM, MySQL in its tablespace until the
