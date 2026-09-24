@@ -374,6 +374,25 @@ $code-bg: #f6f8fa;
     }
   }
 
+  // A date field with the calendar button inside its right edge.
+  .date-input {
+    position: relative;
+    display: flex;
+    align-items: center;
+
+    .form-control {
+      width: 100%;
+      padding-right: 2.5rem;
+    }
+
+    mat-datepicker-toggle {
+      position: absolute;
+      right: 0;
+      --mat-datepicker-toggle-icon-color: #{$text-light};
+      --mdc-icon-button-state-layer-size: 2.25rem;
+    }
+  }
+
   .filter-actions {
     display: flex;
     gap: 0.5rem;

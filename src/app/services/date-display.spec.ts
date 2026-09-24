@@ -3,7 +3,9 @@ import {
   DATE_DISPLAY_FORMATS,
   dateDisplayFormatLabel,
   DEFAULT_DATE_DISPLAY_FORMAT,
-  formatDisplayDateTime
+  formatDisplayDate,
+  formatDisplayDateTime,
+  parseDisplayDate
 } from '../../../shared/date-display';
 
 describe('date display format', () => {
@@ -52,5 +54,37 @@ describe('date display format', () => {
     const today = new Date(2026, 8, 16, 18, 30);
     expect(dateDisplayFormatLabel('DD-MMM-YYYY', today)).toBe('16-Sep-2026 (DD-MMM-YYYY)');
     expect(dateDisplayFormatLabel('MM/DD/YYYY', today)).toBe('09/16/2026 (MM/DD/YYYY)');
+  });
+});
+
+describe('date fields in the display format', () => {
+  const day = new Date(2026, 8, 9);
+
+  it('writes a day in every format', () => {
+    expect(DATE_DISPLAY_FORMATS.map(format => formatDisplayDate(day, format))).toEqual([
+      '09-Sep-2026', '09-09-2026', '09/09/2026', '09.09.2026', '09/09/2026', '2026-09-09'
+    ]);
+    expect(formatDisplayDate(new Date(2026, 0, 31), 'MM/DD/YYYY')).toBe('01/31/2026');
+  });
+
+  it('reads back what it writes, in every format', () => {
+    for (const format of DATE_DISPLAY_FORMATS) {
+      expect(parseDisplayDate(formatDisplayDate(new Date(2026, 0, 31), format), format)).toEqual(new Date(2026, 0, 31));
+    }
+  });
+
+  it('reads the day and month in the order of the chosen format', () => {
+    expect(parseDisplayDate('03/04/2026', 'DD/MM/YYYY')).toEqual(new Date(2026, 3, 3));
+    expect(parseDisplayDate('03/04/2026', 'MM/DD/YYYY')).toEqual(new Date(2026, 2, 4));
+    expect(parseDisplayDate('3-sep-2026', 'DD-MMM-YYYY')).toEqual(new Date(2026, 8, 3));
+    expect(parseDisplayDate('3 9 2026', 'DD.MM.YYYY')).toEqual(new Date(2026, 8, 3));
+  });
+
+  it('refuses text that is not a real day in the chosen format', () => {
+    expect(parseDisplayDate('31/02/2026', 'DD/MM/YYYY')).toBeNull();
+    expect(parseDisplayDate('13/13/2026', 'MM/DD/YYYY')).toBeNull();
+    expect(parseDisplayDate('2026-09-09', 'DD-MM-YYYY')).toBeNull();
+    expect(parseDisplayDate('09-Sept-2026', 'DD-MMM-YYYY')).toBeNull();
+    expect(parseDisplayDate('', 'DD-MMM-YYYY')).toBeNull();
   });
 });
