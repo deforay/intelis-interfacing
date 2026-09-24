@@ -56,17 +56,30 @@ describe('RawDataProcessorService', () => {
     expect(instrumentInterface.processHL7Message).not.toHaveBeenCalled();
   });
 
-  it('reports failure when parsing produces no persisted results', async () => {
+  it('reports failure when a message with results produces no persisted results', async () => {
     const { service, instrumentInterface } = createService();
     instrumentInterface.processHL7Message.mockResolvedValue([]);
 
     const result = await service.reprocessRawData([{
       id: 3,
       instrument_id: 'ANALYZER-1',
-      data: 'MSH|^~\\&|ANALYZER|LAB001|LIS|LAB001|20260714113000||OUL^R22|MSG-003|P|2.5.1'
+      data: 'MSH|^~\\&|ANALYZER|LAB001|LIS|LAB001|20260714113000||OUL^R22|MSG-003|P|2.5.1\rOBX|1|NM|HIV||1250'
     }]);
 
-    expect(result).toMatchObject({ success: 0, failed: 1 });
+    expect(result).toMatchObject({ success: 0, empty: 0, failed: 1 });
+  });
+
+  it('counts a message with no result segments as holding no results, not as a failure', async () => {
+    const { service, instrumentInterface } = createService();
+    instrumentInterface.processHL7Message.mockResolvedValue([]);
+
+    const result = await service.reprocessRawData([{
+      id: 5,
+      instrument_id: 'ANALYZER-1',
+      data: 'MSH|^~\\&|ANALYZER|LAB001|LIS|LAB001|20260714113000||QBP^Q11^QBP_Q11|MSG-005|P|2.5.1\rQPD|WOS^Work Order Step^IHELAW|Q-1|VL0001'
+    }]);
+
+    expect(result).toMatchObject({ success: 0, empty: 1, failed: 0 });
   });
 
   it('reports failure when a reprocessed result cannot be persisted', async () => {

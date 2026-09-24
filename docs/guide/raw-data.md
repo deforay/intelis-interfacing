@@ -45,8 +45,10 @@ what was stored, once the reading is fixed.
       Matching**. It works through them oldest first.
     - To reprocess one transmission, press **Reprocess** on its row.
 6. Watch the progress card. It counts transmissions done, new results, results
-   already stored, and transmissions not fully read. A transmission that holds
-   no results, such as an analyzer's order query, counts as not fully read.
+   already stored, transmissions with no results in them, and transmissions not
+   fully read. A transmission with no results in it, such as an analyzer asking
+   the LIS for a sample's orders, is expected. A transmission not fully read
+   needs a look.
 7. To end a run early, press **Stop**. The run stops after the current
    transmission. Results it already stored stay stored.
 
