@@ -137,12 +137,18 @@ export class RawDataComponent implements OnInit, OnDestroy {
     return !!(this.applied.instrumentId || this.applied.from || this.applied.to || this.applied.search);
   }
 
+  /** A typed day that is not a real day in the Display Date Format. */
+  get invalidDay(): boolean {
+    const invalid = (date: Date | null) => date instanceof Date && Number.isNaN(date.getTime());
+    return invalid(this.fromDate) || invalid(this.toDate);
+  }
+
   get invalidRange(): boolean {
     return !!(this.filter.from && this.filter.to && this.filter.from > this.filter.to);
   }
 
   applyFilter(): void {
-    if (this.invalidRange) {
+    if (this.invalidRange || this.invalidDay) {
       return;
     }
     this.applied = {
