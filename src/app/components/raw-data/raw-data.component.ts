@@ -348,11 +348,12 @@ export class RawDataComponent implements OnInit, OnDestroy {
   }
 
   private reportResult(status: ReprocessingStatus, processingTime: string): void {
-    const outcome = status.stoppedBy
-      ? `Reprocessing stopped after ${status.processedCount} of ${status.totalCount} transmissions. ${status.stoppedBy}. The rest were not reprocessed.`
-      : status.cancelled
-        ? `Reprocessing stopped after ${status.processedCount} of ${status.totalCount} transmissions.`
-        : `Reprocessing complete: ${status.processedCount} transmissions in ${processingTime}.`;
+    let outcome = `Reprocessing complete: ${status.processedCount} transmissions in ${processingTime}.`;
+    if (status.stoppedBy) {
+      outcome = `Reprocessing stopped after ${status.processedCount} of ${status.totalCount} transmissions. ${status.stoppedBy}. The rest were not reprocessed.`;
+    } else if (status.cancelled) {
+      outcome = `Reprocessing stopped after ${status.processedCount} of ${status.totalCount} transmissions.`;
+    }
     this.showMessage(
       `${outcome}\n\n` +
       `New results stored: ${status.saved}\n` +

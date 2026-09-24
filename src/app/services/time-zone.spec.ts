@@ -41,7 +41,7 @@ describe('time zone for received times', () => {
     expect(zones).toContain('UTC');
     expect(zones).toContain(systemTimeZone());
     expect(zones).toContain('Africa/Kinshasa');
-    expect([...zones].sort()).toEqual(zones);
+    expect([...zones].sort((a, b) => a.localeCompare(b))).toEqual(zones);
   });
 
   it('labels the offset from UTC at a moment, following daylight saving', () => {

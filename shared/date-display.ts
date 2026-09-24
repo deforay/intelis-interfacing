@@ -115,13 +115,13 @@ export function parseDisplayDate(text: string, format: unknown = DEFAULT_DATE_DI
   const pieces = String(text ?? '').trim().split(/[-/. ]+/);
   const order = chosen.split(/[-/.]/);
   if (pieces.length !== 3 || order.length !== 3) return null;
-  let year = NaN, month = NaN, day = NaN;
+  let year = Number.NaN, month = Number.NaN, day = Number.NaN;
   order.forEach((token, index) => {
     const piece = pieces[index];
-    if (token === 'YYYY') year = /^\d{4}$/.test(piece) ? Number(piece) : NaN;
-    else if (token === 'MM') month = /^\d{1,2}$/.test(piece) ? Number(piece) : NaN;
-    else if (token === 'MMM') month = MONTHS.findIndex(name => name.toLowerCase() === piece.toLowerCase()) + 1 || NaN;
-    else if (token === 'DD') day = /^\d{1,2}$/.test(piece) ? Number(piece) : NaN;
+    if (token === 'YYYY') year = /^\d{4}$/.test(piece) ? Number(piece) : Number.NaN;
+    else if (token === 'MM') month = /^\d{1,2}$/.test(piece) ? Number(piece) : Number.NaN;
+    else if (token === 'MMM') month = MONTHS.findIndex(name => name.toLowerCase() === piece.toLowerCase()) + 1 || Number.NaN;
+    else if (token === 'DD') day = /^\d{1,2}$/.test(piece) ? Number(piece) : Number.NaN;
   });
   if ([year, month, day].some(Number.isNaN) || month < 1 || month > 12) return null;
   if (day < 1 || day > new Date(year, month, 0).getDate()) return null;
