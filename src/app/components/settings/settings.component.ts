@@ -878,7 +878,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
         reports.push(report);
         if (report.cancelled) break;
         this.compactionProgress = null;
-        if (store === 'mysql' && report.trimmedResults > 0) {
+        // Space freed by earlier runs counts too, so MySQL is always rebuilt.
+        if (store === 'mysql') {
           this.storageMessage = 'Giving the freed space back to the disk (MySQL)…';
           await this.databaseService.reclaimMysqlSpace();
         }
