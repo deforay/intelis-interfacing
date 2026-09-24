@@ -9,7 +9,7 @@ takes effect until you press **Save Settings**.
 |-------|------------|
 | **Testing Lab Code/ID** | A unique identifier for the laboratory, e.g. `LAB001`. It travels with every result. |
 | **Testing Lab Name** | The laboratory's name, as it should appear on results. |
-| **Date Format** | How dates are shown on screen: `16-Sep-2026` (the default), `16-09-2026`, `16/09/2026`, `16.09.2026`, `09/16/2026` or `2026-09-16`. Each choice is shown with today's date. Stored results, raw data and what the LIS receives keep their own format; hovering a date in the results shows the stored value. |
+| **Display Date Format** | How dates are shown on screen: `16-Sep-2026` (the default), `16-09-2026`, `16/09/2026`, `16.09.2026`, `09/16/2026` or `2026-09-16`. Each choice is shown with today's date. It changes only the display. Stored results, raw data and what the LIS receives keep their own format. Hover over a date in the results to see the stored value. |
 | **Auto-connect on startup** | `Yes` skips the login screen and connects every instrument when the application opens. `No` shows the login screen and leaves connecting to you. |
 
 The **SQLite Database Path** is shown rather than asked for: it is where results
