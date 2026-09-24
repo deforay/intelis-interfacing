@@ -103,7 +103,8 @@ replaced, so no rule can make a failed run look like a result.
   already has are skipped.
 
 An instrument with no rules shows a single line under **Result rules**, with
-**Add rule** and **Copy from another instrument**.
+**Add rule**. When another instrument has rules, the line also shows **Copy
+from another instrument**.
 
 The result as read before any rule is always kept beside the stored one, and
 the raw data never changes. After changing a rule, reprocess older raw data to store
