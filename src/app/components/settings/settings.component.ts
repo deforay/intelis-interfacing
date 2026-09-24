@@ -834,6 +834,13 @@ export class SettingsComponent implements OnInit, OnDestroy {
           return;
         }
       }
+      // Space freed by earlier runs, the background one included, counts
+      // too, so MySQL is rebuilt whether or not anything was left to link.
+      if (stores.includes('mysql')) {
+        this.storageMessage = 'Giving the freed space back to the disk (MySQL)…';
+        this.cdRef.detectChanges();
+        await this.databaseService.reclaimMysqlSpace();
+      }
       messages.push(await this.offerSqliteRewrite());
       await this.refreshStorageUsage();
       this.storageMessage = messages.filter(Boolean).join(' ');
@@ -878,11 +885,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
         reports.push(report);
         if (report.cancelled) break;
         this.compactionProgress = null;
-        // Space freed by earlier runs counts too, so MySQL is always rebuilt.
-        if (store === 'mysql') {
-          this.storageMessage = 'Giving the freed space back to the disk (MySQL)…';
-          await this.databaseService.reclaimMysqlSpace();
-        }
       }
     });
     return reports;
