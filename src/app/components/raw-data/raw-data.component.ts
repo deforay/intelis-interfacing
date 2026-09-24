@@ -42,7 +42,8 @@ export class RawDataComponent implements OnInit, OnDestroy {
     errors: [],
     saved: 0,
     unchanged: 0,
-    cancelled: false
+    cancelled: false,
+    stoppedBy: null
   };
 
   /** The filter being edited; `applied` is the one the list shows. */
@@ -279,9 +280,11 @@ export class RawDataComponent implements OnInit, OnDestroy {
   }
 
   private reportResult(status: ReprocessingStatus, processingTime: string): void {
-    const outcome = status.cancelled
-      ? `Reprocessing stopped after ${status.processedCount} of ${status.totalCount} transmissions.`
-      : `Reprocessing complete: ${status.processedCount} transmissions in ${processingTime}.`;
+    const outcome = status.stoppedBy
+      ? `Reprocessing stopped after ${status.processedCount} of ${status.totalCount} transmissions. ${status.stoppedBy}. The rest were not reprocessed.`
+      : status.cancelled
+        ? `Reprocessing stopped after ${status.processedCount} of ${status.totalCount} transmissions.`
+        : `Reprocessing complete: ${status.processedCount} transmissions in ${processingTime}.`;
     this.showMessage(
       `${outcome}\n\n` +
       `New results stored: ${status.saved}\n` +
@@ -290,8 +293,14 @@ export class RawDataComponent implements OnInit, OnDestroy {
       `Transmissions that could not be fully read: ${status.failed}`
     );
 
-    if (status.failed > 0) {
-      this.utilitiesService.logger('warn', `Reprocessing completed with ${status.failed} failures.`, null);
+    if (status.stoppedBy) {
+      this.utilitiesService.logger('error',
+        `Reprocessing stopped after ${status.processedCount} of ${status.totalCount} transmissions: ${status.stoppedBy}`, null);
+    }
+    if (status.failed > 0 || status.stoppedBy) {
+      if (status.failed > 0) {
+        this.utilitiesService.logger('warn', `Reprocessing completed with ${status.failed} failures.`, null);
+      }
       status.errors.forEach((error, index) => {
         this.utilitiesService.logger('error', `Error ${index + 1}: ${error}`, null);
       });
