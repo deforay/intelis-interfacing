@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as log from 'electron-log/main';
 import * as Store from 'electron-store';
 import * as sqlite3 from '@vscode/sqlite3';
+import { appVersion } from './app-version.main';
 
 let sqlitePath: string = null;
 let sqliteDbName: string = 'interface.db';
@@ -63,7 +64,7 @@ function setupSqlite(storeInstance: Store, callback: (db: sqlite3.Database, err?
         db.run("PRAGMA cache_size = 10000");    // Increase cache size
 
         storeInstance.set('appPath', sqlitePath);
-        storeInstance.set('appVersion', app.getVersion());
+        storeInstance.set('appVersion', appVersion());
         log.info('SQLite database initialized at:', sqlitePath);
 
         callback(db); // Success
