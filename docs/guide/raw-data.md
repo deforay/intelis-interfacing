@@ -133,7 +133,8 @@ covers them.
 
 When the automatic run frees space in this computer's database, the tool gives
 it back to the disk at its next start, before it opens its window and so before
-any instrument can connect. This takes seconds on a compacted database. The
+any instrument can connect. A small window with a moving bar shows while it
+runs. This takes seconds on a compacted database. The
 MySQL database is not rewritten automatically, because other installations or
 the LIS can be using it at the same time.
 

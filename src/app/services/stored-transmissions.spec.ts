@@ -464,7 +464,7 @@ describe('compacting storage', () => {
     const small = setup('hl7', 'roche-cobas-4800');
     storeAsOldBuild(small, COBAS_4800_MESSAGE, '2025-08-17 04:00:00', '2025-08-17 04:00:02');
     await compactInBackground(small);
-    expect(small.store.get('storageReclaimPending')).toBeUndefined();
+    expect(small.store.get('storageReclaimPending')?.sqlite).toBeUndefined();
 
     const large = setup('hl7', 'roche-cobas-4800');
     storeAsOldBuild(large, COBAS_4800_MESSAGE, '2025-08-17 04:00:00', '2025-08-17 04:00:02');
@@ -475,7 +475,39 @@ describe('compacting storage', () => {
     } finally {
       (RawDataProcessorService as any).RECLAIM_MIN_CHARACTERS = threshold;
     }
-    expect(large.store.get('storageReclaimPending')).toEqual({ sqlite: expect.any(String) });
+    expect(large.store.get('storageReclaimPending')).toMatchObject({ sqlite: expect.any(String) });
+  });
+
+  it('keeps the space a stopped run freed toward the rewrite', async () => {
+    const s = setup('hl7', 'roche-cobas-4800');
+    // Compaction walks newest first: the eight-sample run, whose copies it
+    // trims, comes before the one-sample run it is stopped ahead of.
+    storeAsOldBuild(s, cobas4800Run('MSG-FIRST', [{ sampleId: 'VL-FIRST', value: 'Target Not Detected' }]), '2025-08-16 04:00:00', '2025-08-16 04:00:02');
+    storeAsOldBuild(s, COBAS_4800_MESSAGE, '2025-08-17 04:00:00', '2025-08-17 04:00:02');
+    const subscription = s.processor.backgroundCompaction$.subscribe(progress => {
+      if (progress) void s.processor.stopBackgroundCompaction();
+    });
+
+    await compactInBackground(s);
+    subscription.unsubscribe();
+
+    expect(s.rows('SELECT id FROM orders WHERE transmission_id IS NULL').length).toBeGreaterThan(0);
+    expect(s.store.get('storageReclaimPending')?.freedCharacters).toBeGreaterThan(0);
+    expect(s.store.get('storageCompacted')).toBeUndefined();
+  });
+
+  it('does not link a result that was requeued for sending after it was read', async () => {
+    const s = setup('hl7', 'roche-cobas-4800');
+    storeAsOldBuild(s, COBAS_4800_MESSAGE, '2025-08-17 04:00:00', '2025-08-17 04:00:02');
+    const [row] = s.rows('SELECT id, LENGTH(raw_text) AS length FROM orders LIMIT 1');
+    s.database.prepare('UPDATE orders SET lims_sync_status = 0 WHERE id = ?').run(row.id);
+
+    const linked = await s.dbService.linkResultToTransmission(
+      'sqlite', row.id, 'transmission-1', 'MSH|short', row.length, { storedBefore: '2099-01-01 00:00:00', webhookDelivered: false }
+    );
+
+    expect(linked).toBe(false);
+    expect(s.rows('SELECT transmission_id FROM orders WHERE id = ?', [row.id])[0].transmission_id).toBeNull();
   });
 
   it('waits for a run the operator started before compacting in the background', async () => {
