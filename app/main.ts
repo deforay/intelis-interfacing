@@ -6,6 +6,7 @@ import * as sqlite3 from '@vscode/sqlite3';
 
 import * as log from 'electron-log/main';
 import { setupSqlite } from './sqlite3helper.main';
+import { appVersion } from './app-version.main';
 import { registerIntelisConnectionIpc } from './intelis-connection.main';
 import { registerResultWebhookIpc } from './result-webhook.main';
 import { registerUpdateCheckIpc } from './update-check.main';
@@ -502,7 +503,7 @@ function createWindow(): BrowserWindow {
   store = new Store();
 
   store.set('appPath', path.join(app.getPath('userData'), '/', sqliteDbName));
-  store.set('appVersion', app.getVersion());
+  store.set('appVersion', appVersion());
 
   win = new BrowserWindow({
     x: 0,
@@ -587,14 +588,14 @@ try {
     // directly so passphrases and decrypted credentials never cross IPC.
     registerSettingsBackupIpc({
       store,
-      appVersion: app.getVersion(),
+      appVersion: appVersion(),
       userDataPath: app.getPath('userData'),
       getWindow: () => win
     });
 
     startScheduledSettingsBackups({
       store,
-      appVersion: app.getVersion(),
+      appVersion: appVersion(),
       userDataPath: app.getPath('userData'),
       getWindow: () => win
     });
