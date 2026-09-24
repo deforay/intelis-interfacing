@@ -708,7 +708,7 @@
                             <i class="fas fa-caret-down"></i>
                           </button>
                           <mat-menu #copyRulesMenu="matMenu">
-                            <button type="button" mat-menu-item *ngFor="let source of ruleSourcesFor(i)"
+                            <button type="button" mat-menu-item *ngFor="let source of ruleSourcesFor(i); trackBy: trackByIndex"
                               (click)="copyResultRules(source.index, i)">
                               {{ source.name }} ({{ source.count }} {{ source.count === 1 ? 'rule' : 'rules' }})
                             </button>
