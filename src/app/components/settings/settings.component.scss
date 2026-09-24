@@ -688,14 +688,39 @@ select.form-control {
     }
   }
 
+  // One section under another, each a row of fields across the card.
   .instrument-body {
     padding: 1.5rem;
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 2rem;
+    grid-template-columns: 1fr;
+    gap: 1.75rem;
 
-    @media (max-width: 768px) {
-      grid-template-columns: 1fr;
+    .field-row {
+      display: grid;
+      column-gap: 1.25rem;
+      align-items: start;
+
+      &.instrument-fields {
+        grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(8rem, 1fr);
+      }
+
+      &.connection-fields {
+        grid-template-columns: minmax(0, 2fr) minmax(0, 1.5fr) minmax(0, 1.5fr) minmax(7rem, 1fr);
+      }
+
+      @media (max-width: 1100px) {
+        &.instrument-fields,
+        &.connection-fields {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 768px) {
+        &.instrument-fields,
+        &.connection-fields {
+          grid-template-columns: 1fr;
+        }
+      }
     }
 
     .form-section {
