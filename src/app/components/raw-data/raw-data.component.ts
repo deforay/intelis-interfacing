@@ -9,13 +9,22 @@ import { MatPaginator, PageEvent } from '@angular/material/paginator';
 import { MatTableDataSource } from '@angular/material/table';
 import { SelectionModel } from '@angular/cdk/collections';
 import { Subscription } from 'rxjs';
+import { DateAdapter, MAT_DATE_FORMATS } from '@angular/material/core';
+import { DISPLAY_DATE_FORMATS, DisplayDateAdapter } from '../../services/display-date-adapter';
+import { DEFAULT_DATE_DISPLAY_FORMAT, formatDisplayDate, isDateDisplayFormat } from '../../../../shared/date-display';
+import { ElectronStoreService } from '../../services/electron-store.service';
 
 @Component({
   standalone: false,
   selector: 'app-raw-data',
   templateUrl: './raw-data.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
-  styleUrls: ['./raw-data.component.scss']
+  styleUrls: ['./raw-data.component.scss'],
+  // The date fields take and show days in the Display Date Format.
+  providers: [
+    { provide: DateAdapter, useClass: DisplayDateAdapter },
+    { provide: MAT_DATE_FORMATS, useValue: DISPLAY_DATE_FORMATS }
+  ]
 })
 export class RawDataComponent implements OnInit, OnDestroy {
   public displayedColumns: string[] = [
@@ -49,6 +58,9 @@ export class RawDataComponent implements OnInit, OnDestroy {
   /** The filter being edited; `applied` is the one the list shows. */
   public filter: RawDataFilter = { instrumentId: '', from: '', to: '', search: '' };
   public applied: RawDataFilter = {};
+  /** The days picked in the date fields; `filter` holds them as YYYY-MM-DD. */
+  public fromDate: Date | null = null;
+  public toDate: Date | null = null;
   public instrumentNames: string[] = [];
   public store: RawDataStore = 'sqlite';
   public total = 0;
@@ -70,8 +82,38 @@ export class RawDataComponent implements OnInit, OnDestroy {
     private rawDataProcessor: RawDataProcessorService,
     private databaseService: DatabaseService,
     private cdRef: ChangeDetectorRef,
-    private router: Router
+    private router: Router,
+    private electronStoreService: ElectronStoreService
   ) { }
+
+  /** The Display Date Format, shown as the date fields' placeholder. */
+  get dateFormat(): string {
+    const format = this.electronStoreService.get('commonConfig')?.dateFormat;
+    return isDateDisplayFormat(format) ? format : DEFAULT_DATE_DISPLAY_FORMAT;
+  }
+
+  /** A picked day as the YYYY-MM-DD the filter compares, or '' for none. */
+  static storedDay(date: Date | null): string {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+    const two = (n: number) => String(n).padStart(2, '0');
+    return `${String(date.getFullYear()).padStart(4, '0')}-${two(date.getMonth() + 1)}-${two(date.getDate())}`;
+  }
+
+  setFrom(date: Date | null): void {
+    this.fromDate = date;
+    this.filter.from = RawDataComponent.storedDay(date);
+  }
+
+  setTo(date: Date | null): void {
+    this.toDate = date;
+    this.filter.to = RawDataComponent.storedDay(date);
+  }
+
+  /** A YYYY-MM-DD day in the Display Date Format. */
+  private displayDay(day: string): string {
+    const [year, month, date] = day.split('-').map(Number);
+    return formatDisplayDate(new Date(year, month - 1, date), this.dateFormat);
+  }
 
   ngOnInit() {
     void this.loadPage();
@@ -116,6 +158,8 @@ export class RawDataComponent implements OnInit, OnDestroy {
 
   clearFilter(): void {
     this.filter = { instrumentId: '', from: '', to: '', search: '' };
+    this.fromDate = null;
+    this.toDate = null;
     this.applyFilter();
   }
 
@@ -254,7 +298,7 @@ export class RawDataComponent implements OnInit, OnDestroy {
     const parts: string[] = [];
     parts.push(filter.instrumentId ? filter.instrumentId : 'every instrument');
     if (filter.from || filter.to) {
-      parts.push(`${filter.from || 'the start'} to ${filter.to || 'today'}`);
+      parts.push(`${filter.from ? this.displayDay(filter.from) : 'the start'} to ${filter.to ? this.displayDay(filter.to) : 'today'}`);
     }
     if (filter.search) {
       parts.push(`containing "${filter.search}"`);

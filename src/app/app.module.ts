@@ -43,6 +43,7 @@ import { MatDialogModule } from '@angular/material/dialog';
 import { MatAutocompleteModule } from '@angular/material/autocomplete';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatInputModule } from '@angular/material/input';
+import { MatDatepickerModule } from '@angular/material/datepicker';
 
 @NgModule({
   declarations: [
@@ -60,6 +61,7 @@ import { MatInputModule } from '@angular/material/input';
     MatAutocompleteModule,
     MatMenuModule,
     MatInputModule,
+    MatDatepickerModule,
     MatCheckboxModule,
     MatTableModule,
     MatSelectModule,

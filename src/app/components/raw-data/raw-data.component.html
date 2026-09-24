@@ -104,11 +104,21 @@
     </div>
     <div class="filter-field">
       <label for="rawDataFrom">Received from</label>
-      <input id="rawDataFrom" name="from" type="date" class="form-control" [(ngModel)]="filter.from">
+      <div class="date-input">
+        <input id="rawDataFrom" name="from" class="form-control" autocomplete="off" [placeholder]="dateFormat"
+               [matDatepicker]="fromPicker" [ngModel]="fromDate" (ngModelChange)="setFrom($event)">
+        <mat-datepicker-toggle [for]="fromPicker"></mat-datepicker-toggle>
+        <mat-datepicker #fromPicker></mat-datepicker>
+      </div>
     </div>
     <div class="filter-field">
       <label for="rawDataTo">Received to</label>
-      <input id="rawDataTo" name="to" type="date" class="form-control" [(ngModel)]="filter.to">
+      <div class="date-input">
+        <input id="rawDataTo" name="to" class="form-control" autocomplete="off" [placeholder]="dateFormat"
+               [matDatepicker]="toPicker" [ngModel]="toDate" (ngModelChange)="setTo($event)">
+        <mat-datepicker-toggle [for]="toPicker"></mat-datepicker-toggle>
+        <mat-datepicker #toPicker></mat-datepicker>
+      </div>
     </div>
     <div class="filter-field filter-search">
       <label for="rawDataSearch">Contains</label>

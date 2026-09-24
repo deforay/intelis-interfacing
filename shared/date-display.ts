@@ -97,3 +97,35 @@ export function formatDisplayDateTime(value: unknown, format: unknown = DEFAULT_
 export function dateDisplayFormatLabel(format: DateDisplayFormat, today: Date = new Date()): string {
   return `${formatDisplayDateTime(new Date(today.getFullYear(), today.getMonth(), today.getDate()), format).split(' ')[0]} (${format})`;
 }
+
+/** A calendar day, with no time, in the chosen format, as typed into a date field. */
+export function formatDisplayDate(date: Date, format: unknown = DEFAULT_DATE_DISPLAY_FORMAT): string {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+  const chosen = isDateDisplayFormat(format) ? format : DEFAULT_DATE_DISPLAY_FORMAT;
+  return datePart({ year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate(), time: null }, chosen);
+}
+
+/**
+ * A day typed in the chosen format, as a local Date at midnight, or null when
+ * it is not a real day in that format. Any of - / . or a space separates the
+ * parts, and a month name is matched without regard to case.
+ */
+export function parseDisplayDate(text: string, format: unknown = DEFAULT_DATE_DISPLAY_FORMAT): Date | null {
+  const chosen = isDateDisplayFormat(format) ? format : DEFAULT_DATE_DISPLAY_FORMAT;
+  const pieces = String(text ?? '').trim().split(/[-/. ]+/);
+  const order = chosen.split(/[-/.]/);
+  if (pieces.length !== 3 || order.length !== 3) return null;
+  let year = NaN, month = NaN, day = NaN;
+  order.forEach((token, index) => {
+    const piece = pieces[index];
+    if (token === 'YYYY') year = /^\d{4}$/.test(piece) ? Number(piece) : NaN;
+    else if (token === 'MM') month = /^\d{1,2}$/.test(piece) ? Number(piece) : NaN;
+    else if (token === 'MMM') month = MONTHS.findIndex(name => name.toLowerCase() === piece.toLowerCase()) + 1 || NaN;
+    else if (token === 'DD') day = /^\d{1,2}$/.test(piece) ? Number(piece) : NaN;
+  });
+  if ([year, month, day].some(Number.isNaN) || month < 1 || month > 12) return null;
+  if (day < 1 || day > new Date(year, month, 0).getDate()) return null;
+  const date = new Date(year, month - 1, day);
+  date.setFullYear(year);
+  return date;
+}
