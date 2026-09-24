@@ -7,6 +7,8 @@ import { InstrumentConnectionStack } from '../interfaces/instrument-connections.
 import { RawDataFilter, RawDataStore } from '../interfaces/raw-machine-data.interface';
 import { effectiveResultRules } from '../../../shared/result-rules';
 
+type ReprocessOutcome = 'stored' | 'empty' | 'failed';
+
 export interface ReprocessingStatus {
   inProgress: boolean;
   processedCount: number;
@@ -14,6 +16,12 @@ export interface ReprocessingStatus {
   currentItem: string;
   /** Transmissions every result of which was stored or already stored */
   success: number;
+  /**
+   * Transmissions with no result records at all, such as an analyzer asking
+   * the LIS for a sample's orders. Nothing to read, and nothing wrong.
+   */
+  empty: number;
+  /** Transmissions with result records that did not all yield a stored result */
   failed: number;
   errors: string[];
   /** Results stored as new rows */
@@ -80,6 +88,7 @@ export class RawDataProcessorService {
       totalCount: 0,
       currentItem: '',
       success: 0,
+      empty: 0,
       failed: 0,
       errors: [],
       saved: 0,
@@ -157,8 +166,11 @@ export class RawDataProcessorService {
           publish();
 
           try {
-            if (await this.reprocessEntry(entry, stats)) {
+            const outcome = await this.reprocessEntry(entry, stats);
+            if (outcome === 'stored') {
               status.success++;
+            } else if (outcome === 'empty') {
+              status.empty++;
             } else {
               status.failed++;
               status.errors.push(`Failed to reprocess raw data ID: ${entry.id}`);
@@ -232,7 +244,7 @@ export class RawDataProcessorService {
     };
   }
 
-  private async reprocessEntry(entry: any, stats: ResultSaveStats): Promise<boolean> {
+  private async reprocessEntry(entry: any, stats: ResultSaveStats): Promise<ReprocessOutcome> {
     const instrumentId = entry.instrument_id || entry.machine;
     const instrumentSettings = this.getInstrumentSettings(instrumentId);
     if (!instrumentSettings) {
@@ -247,7 +259,13 @@ export class RawDataProcessorService {
     return this.reprocessUsingInstrumentInterface(entry, instrumentSettings, { transmissionId, skipIdentical: true, stats });
   }
 
-  private async reprocessUsingInstrumentInterface(entry: any, instrumentSettings: any, options: ResultSaveOptions): Promise<boolean> {
+  /**
+   * `stored` when every result was stored or already stored, `empty` when the
+   * transmission has no result records (no OBX segment, no ASTM order
+   * record), `failed` otherwise. Only the absence of result records counts as
+   * empty: records that yield nothing are a failure, however they fail.
+   */
+  private async reprocessUsingInstrumentInterface(entry: any, instrumentSettings: any, options: ResultSaveOptions): Promise<ReprocessOutcome> {
     try {
       const rawData = entry.data;
       const protocol = instrumentSettings.interfaceCommunicationProtocol;
@@ -262,11 +280,14 @@ export class RawDataProcessorService {
         persistenceResults = await this.withPersistenceTimeout(
           this.instrumentInterfaceService.processHL7Message(instrumentConnectionData, hl7Message, options)
         );
+        if (persistenceResults.length === 0 && !hl7Message.split('\r').some(segment => segment.startsWith('OBX|'))) {
+          return 'empty';
+        }
       } else if (protocol === 'astm-checksum' || protocol === 'astm-nonchecksum') {
         const astmData = this.utilsService.removeControlCharacters(rawData, protocol !== 'astm-nonchecksum');
         if (this.instrumentInterfaceService['astmHelper'].isHL7Transmission(astmData)) {
           this.utilsService.logger('error', `Raw data ID ${entry.id} holds HL7, but this instrument is set to ASTM; nothing was read from it`, instrumentSettings.analyzerMachineName);
-          return false;
+          return 'failed';
         }
         const parts = astmData.split(this.instrumentInterfaceService['astmHelper'].getStartMarker());
         const sampleResults: any[] = [];
@@ -276,8 +297,10 @@ export class RawDataProcessorService {
         const astmHelper = this.instrumentInterfaceService['astmHelper'];
         let unreadableOrders = 0;
         let hl7Messages = 0;
+        let orderRecords = 0;
         for (const part of parts) {
           if (!part) continue;
+          orderRecords += part.split(/<CR>/).filter(record => /^\d*O\|/.test(record)).length;
           const extraction = astmHelper.extractASTMResults(part.split(/<CR>/), part);
           if (extraction.isHL7) {
             hl7Messages++;
@@ -292,20 +315,23 @@ export class RawDataProcessorService {
         // An order that could not be read is a result not recovered: the
         // entry has not been reprocessed, whatever else it yielded.
         if (unreadableOrders > 0) {
-          return false;
+          return 'failed';
         }
         if (hl7Messages > 0) {
           this.utilsService.logger('error', `Raw data ID ${entry.id} holds HL7, but this instrument is set to ASTM; nothing was read from it`, instrumentSettings.analyzerMachineName);
-          return false;
+          return 'failed';
+        }
+        if (orderRecords === 0 && persistenceResults.length === 0) {
+          return 'empty';
         }
       } else {
         throw new Error(`Unsupported protocol: ${protocol}`);
       }
 
-      return persistenceResults.length > 0 && persistenceResults.every(Boolean);
+      return persistenceResults.length > 0 && persistenceResults.every(Boolean) ? 'stored' : 'failed';
     } catch (error) {
       this.utilsService.logger('error', `InstrumentInterface reprocessing error: ${error}`, entry.instrument_id || entry.machine);
-      return false;
+      return 'failed';
     }
   }
 

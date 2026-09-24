@@ -37,6 +37,7 @@ export class RawDataComponent implements OnInit, OnDestroy {
     totalCount: 0,
     currentItem: '',
     success: 0,
+    empty: 0,
     failed: 0,
     errors: [],
     saved: 0,
@@ -285,6 +286,7 @@ export class RawDataComponent implements OnInit, OnDestroy {
       `${outcome}\n\n` +
       `New results stored: ${status.saved}\n` +
       `Already stored, not stored again: ${status.unchanged}\n` +
+      `Transmissions with no results in them: ${status.empty}\n` +
       `Transmissions that could not be fully read: ${status.failed}`
     );
 

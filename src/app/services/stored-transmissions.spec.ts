@@ -242,6 +242,31 @@ describe('reprocessing', () => {
     expect(repeat[0]).toMatchObject({ order_id: 'VL260004', results: 'Invalid run', transmission_id: transmission.transmission_id });
   });
 
+  it('counts an analyzer\'s order query as holding no results, not as a failure', async () => {
+    const s = setup('hl7', 'roche-cobas-4800');
+    const query = [
+      'MSH|^~\\&|cobas 4800 software 2.2.0.1509|""|LIS|LIS Facility|20250415151356+0200||QBP^Q11^QBP_Q11|Q-1|P|2.5.1|||ER|AL||UNICODE UTF-8|||LAB-27^IHE',
+      'QPD|WOS^Work Order Step^IHELAW|Q-1-1|VL0001',
+      'RCP|I||R'
+    ].join('\r');
+    await s.receive(mllp(query));
+    await s.receive(mllp(COBAS_4800_MESSAGE));
+
+    const status = await s.processor.reprocessMatching('sqlite', {});
+
+    expect(status).toMatchObject({ processedCount: 2, success: 1, empty: 1, failed: 0 });
+  });
+
+  it('counts an ASTM session with no order record as holding no results', async () => {
+    const s = setup('astm-checksum', 'abbott-m2000');
+    s.database.prepare('INSERT INTO raw_data (data, machine, instrument_id) VALUES (?, ?, ?)')
+      .run('\x021H|\\^&|||m2000\rQ|1|ALL||^^^\rL|1|N\r\x0333\r\n', 'ANALYZER-1', 'ANALYZER-1');
+
+    const status = await s.processor.reprocessMatching('sqlite', {});
+
+    expect(status).toMatchObject({ processedCount: 1, empty: 1, failed: 0 });
+  });
+
   it('reprocesses only the transmissions the filter matches, a batch at a time', async () => {
     const s = setup('hl7', 'roche-cobas-4800');
     for (let i = 0; i < 25; i++) {
