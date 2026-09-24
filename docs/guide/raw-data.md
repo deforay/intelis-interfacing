@@ -141,14 +141,15 @@ the LIS can be using it at the same time.
 To compact everything at once, and give the space back to the disk now:
 
 1. Take a backup. See [backup and restore](backup-restore.md).
-2. Wait until no analyzer is sending. A result that arrives during the final
-   rewrite waits for it, and the console can report it as not saved although
-   it is saved.
-3. Open **Settings → Troubleshooting**.
-4. In the **Storage** card, press **Show Storage Use** to see the current
+2. Open **Settings → Troubleshooting**.
+3. In the **Storage** card, press **Show Storage Use** to see the current
    sizes.
-5. Press **Compact Storage**.
-6. Read the confirmation, then press **Compact Storage** again.
+4. Press **Compact Storage**, read the confirmation, then press
+   **Compact Storage** again. Results keep arriving while it runs.
+5. When it asks, press **Restart Now** or **At Next Start**. Restarting
+   interrupts every current instrument connection, so wait until no analyzer
+   is sending. With auto-connect on, the instruments reconnect when the tool
+   opens again.
 
 Compact Storage makes these changes:
 
@@ -161,10 +162,10 @@ Compact Storage makes these changes:
 - It never changes or removes a stored transmission, and sends no result to
   the LIS again.
 - It covers this computer's database and, when one is configured, the MySQL
-  database.
-- It rewrites each database at the end, so the freed space returns to the
-  disk. The rewrite needs free disk space about the size of the compacted
-  database.
+  database. It rebuilds the MySQL `orders` table at the end.
+- It rewrites this computer's database at the next start, before any
+  instrument can connect. The rewrite needs free disk space about the size of
+  the compacted database.
 
 On that laboratory's database, Compact Storage linked 62,332 of 63,003 results
 in a few minutes. The database shrank from 3.4 GB to 113 MB.

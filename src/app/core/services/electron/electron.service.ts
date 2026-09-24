@@ -181,9 +181,12 @@ export class ElectronService {
     return this.ipcRenderer.invoke('sqlite3-wal-checkpoint');
   }
 
-  /** Rewrites the SQLite file without its free pages, so it shrinks. */
-  vacuumSqlite(): Promise<{ success: boolean }> {
-    return this.ipcRenderer.invoke('sqlite3-vacuum');
+  /**
+   * Asks for the SQLite file to be rewritten without its free pages, so it
+   * shrinks, at the next start. With `restartNow`, the tool restarts at once.
+   */
+  rewriteSqliteAtStart(restartNow: boolean): Promise<{ success: boolean }> {
+    return this.ipcRenderer.invoke('rewrite-sqlite-at-start', restartNow);
   }
 
   // WHY: these are fire-and-forget. Without a catch, an IPC failure (main

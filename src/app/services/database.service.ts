@@ -1895,16 +1895,19 @@ export class DatabaseService {
   }
 
   /**
-   * Gives back to the disk the space freed inside a database: SQLite keeps
-   * freed pages in its file until VACUUM, MySQL in its tablespace until the
-   * table is rebuilt.
+   * Gives back to the disk the space freed inside the MySQL database, which
+   * keeps it in its tablespace until the table is rebuilt. SQLite is
+   * rewritten at start instead (`ElectronService.rewriteSqliteAtStart`).
    */
-  public async reclaimSpace(store: RawDataStore): Promise<void> {
-    if (store === 'sqlite') {
-      await this.electronService.vacuumSqlite();
-    } else {
-      await this.execQueryPromise('OPTIMIZE TABLE `orders`', []);
-    }
+  /** Space inside the SQLite file that a rewrite would give back to the disk. */
+  public async sqliteFreeBytes(): Promise<number> {
+    const [pages] = await this.execSqlite('PRAGMA freelist_count', []);
+    const [size] = await this.execSqlite('PRAGMA page_size', []);
+    return Number(pages?.freelist_count ?? 0) * Number(size?.page_size ?? 0);
+  }
+
+  public async reclaimMysqlSpace(): Promise<void> {
+    await this.execQueryPromise('OPTIMIZE TABLE `orders`', []);
   }
 
   fetchRecentResults(searchParam: string = ''): Observable<any[]> {

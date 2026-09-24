@@ -841,11 +841,16 @@ try {
     // VACUUM rewrites the whole file, so it runs here, where no query
     // timeout applies, and the WAL is truncated after it so the space
     // really leaves the disk.
-    ipcMain.handle('sqlite3-vacuum', () => {
-      if (!sqlite3Obj) {
-        return Promise.reject(new Error('SQLite database not initialized'));
+    // SQLite is never rewritten while the tool runs: results that arrive
+    // meanwhile would wait on it. The rewrite is asked for here and done at
+    // the next start, before any instrument can connect, now if the operator
+    // chose to restart.
+    ipcMain.handle('rewrite-sqlite-at-start', (_event, restartNow: boolean) => {
+      store.set(STORAGE_RECLAIM_PENDING_KEY, { sqlite: new Date().toISOString() });
+      if (restartNow) {
+        setTimeout(() => restartApp(), 300);
       }
-      return vacuumSqlite(sqlite3Obj).then(() => ({ success: true }));
+      return { success: true };
     });
 
     ipcMain.handle('force-rerun-migrations', async () => {
