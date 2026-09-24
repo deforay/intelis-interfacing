@@ -191,16 +191,13 @@ export class RawDataProcessorService {
     if (this.isCompacted(store)) {
       return true;
     }
+    const report = RawDataProcessorService.emptyReport(store);
     try {
       // A database with no result left to link has nothing to compact.
       if (await this.instrumentInterfaceService.dbService.countUnlinkedResults(store) > 0) {
-        const report = await this.runCompaction(
-          store, progress => this.backgroundCompaction.next(progress), () => this.backgroundStopRequested, this.settledResults(store)
+        await this.runCompaction(
+          store, progress => this.backgroundCompaction.next(progress), () => this.backgroundStopRequested, this.settledResults(store), report
         );
-        // Counted before anything else: a stopped run freed space too.
-        if (store === 'sqlite') {
-          this.recordFreedSpace(report.charactersRemoved);
-        }
         if (report.cancelled) {
           return false;
         }
@@ -214,6 +211,11 @@ export class RawDataProcessorService {
       // It is tried again at the next start. What it did stays done.
       this.utilsService.logger('error', `Storage compaction stopped: ${error instanceof Error ? error.message : error}`, null);
       return false;
+    } finally {
+      // Whether it finished, was stopped or failed, the space it freed counts.
+      if (store === 'sqlite') {
+        this.recordFreedSpace(report.charactersRemoved);
+      }
     }
   }
 
@@ -597,18 +599,21 @@ export class RawDataProcessorService {
     }
   }
 
+  /** A report to fill. A caller that holds it still has what was done if the run throws. */
+  private static emptyReport(store: RawDataStore): CompactionReport {
+    return { store, transmissions: 0, skippedTransmissions: 0, linkedResults: 0, trimmedResults: 0, charactersRemoved: 0, cancelled: false };
+  }
+
   private async runCompaction(
     store: RawDataStore,
     onProgress: (progress: CompactionProgress) => void,
     shouldStop: () => boolean,
-    settled: SettledResults | null = null
+    settled: SettledResults | null = null,
+    report: CompactionReport = RawDataProcessorService.emptyReport(store)
   ): Promise<CompactionReport> {
     const dbService = this.instrumentInterfaceService.dbService;
     this.instrumentsSettings = this.electronStoreService.get('instrumentsConfig');
 
-    const report: CompactionReport = {
-      store, transmissions: 0, skippedTransmissions: 0, linkedResults: 0, trimmedResults: 0, charactersRemoved: 0, cancelled: false
-    };
     const totalTransmissions = await dbService.countRawData(store, {});
     let beforeId = Number.MAX_SAFE_INTEGER;
 

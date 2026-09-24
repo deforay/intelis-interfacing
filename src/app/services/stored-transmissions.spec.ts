@@ -496,6 +496,22 @@ describe('compacting storage', () => {
     expect(s.store.get('storageCompacted')).toBeUndefined();
   });
 
+  it('keeps the space a failed run freed toward the rewrite', async () => {
+    const s = setup('hl7', 'roche-cobas-4800');
+    storeAsOldBuild(s, cobas4800Run('MSG-FIRST', [{ sampleId: 'VL-FIRST', value: 'Target Not Detected' }]), '2025-08-16 04:00:00', '2025-08-16 04:00:02');
+    storeAsOldBuild(s, COBAS_4800_MESSAGE, '2025-08-17 04:00:00', '2025-08-17 04:00:02');
+    const read = s.dbService.nextRawDataBatch.bind(s.dbService);
+    vi.spyOn(s.dbService, 'nextRawDataBatch')
+      .mockImplementationOnce(async (...args: any[]) => (await read(...args)).slice(0, 1))
+      .mockRejectedValueOnce(new Error('database went away'));
+
+    await compactInBackground(s);
+
+    expect(s.rows('SELECT id FROM orders WHERE transmission_id IS NOT NULL').length).toBeGreaterThan(0);
+    expect(s.store.get('storageReclaimPending')?.freedCharacters).toBeGreaterThan(0);
+    expect(s.store.get('storageCompacted')).toBeUndefined();
+  });
+
   it('does not link a result that was requeued for sending after it was read', async () => {
     const s = setup('hl7', 'roche-cobas-4800');
     storeAsOldBuild(s, COBAS_4800_MESSAGE, '2025-08-17 04:00:00', '2025-08-17 04:00:02');
