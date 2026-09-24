@@ -117,8 +117,12 @@ export type SettingsExport = PlainSettingsExport | EncryptedSettingsExport;
  * sealed to this computer's keychain, and its activation decides which of this
  * database's results are forwarded. Restored elsewhere, it would switch
  * forwarding on for a database it never looked at.
+ *
+ * `storageCompacted` records which of this machine's databases were
+ * compacted after the 4.8.0 upgrade. Restored elsewhere, it would stop that
+ * machine's own database from being compacted.
  */
-export const INSTALLATION_IDENTITY_KEYS = ['intelisConnection', 'sourceInstallationId', 'resultWebhook'] as const;
+export const INSTALLATION_IDENTITY_KEYS = ['intelisConnection', 'sourceInstallationId', 'resultWebhook', 'storageCompacted'] as const;
 
 /** Credential fields, omitted unless the export is encrypted with a passphrase. */
 const SENSITIVE_COMMON_CONFIG_FIELDS = ['mysqlPassword', 'encryptionKey'] as const;
