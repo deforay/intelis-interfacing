@@ -81,6 +81,8 @@ export class RawDataProcessorService {
   /** The compaction running in the background, if any. */
   private backgroundRun: Promise<void> | null = null;
   private backgroundStopRequested = false;
+  /** Reprocessing or Compact Storage runs started by the operator, now running. */
+  private foregroundRuns = 0;
   private readonly backgroundCompaction = new BehaviorSubject<CompactionProgress | null>(null);
   /** Progress of the compaction running in the background, or null. */
   public readonly backgroundCompaction$ = this.backgroundCompaction.asObservable();
@@ -127,12 +129,32 @@ export class RawDataProcessorService {
    */
   scheduleAutomaticCompaction(delayMs = RawDataProcessorService.AUTOMATIC_COMPACTION_DELAY_MS): void {
     setTimeout(() => {
+      // Never alongside a run the operator started: wait for it to end.
+      if (this.foregroundRuns > 0) {
+        this.scheduleAutomaticCompaction(delayMs);
+        return;
+      }
       this.backgroundStopRequested = false;
       this.backgroundRun = this.compactAutomatically().finally(() => {
         this.backgroundRun = null;
         this.backgroundCompaction.next(null);
       });
     }, delayMs);
+  }
+
+  /**
+   * Runs work the operator started, such as Compact Storage with its final
+   * rewrite, with the background compaction stopped and held off until the
+   * work ends.
+   */
+  async holdingBackgroundCompaction<T>(work: () => Promise<T>): Promise<T> {
+    this.foregroundRuns++;
+    try {
+      await this.stopBackgroundCompaction();
+      return await work();
+    } finally {
+      this.foregroundRuns--;
+    }
   }
 
   /** Stops the background compaction, if one is running, and waits for it. */
@@ -236,6 +258,15 @@ export class RawDataProcessorService {
   }
 
   private async runReprocessing(totalCount: number, nextBatch: () => Promise<any[]>): Promise<ReprocessingStatus> {
+    this.foregroundRuns++;
+    try {
+      return await this.reprocess(totalCount, nextBatch);
+    } finally {
+      this.foregroundRuns--;
+    }
+  }
+
+  private async reprocess(totalCount: number, nextBatch: () => Promise<any[]>): Promise<ReprocessingStatus> {
     // Reprocessing and compacting share the Stop request, so one at a time.
     await this.stopBackgroundCompaction();
     this.cancelRequested = false;
@@ -498,14 +529,19 @@ export class RawDataProcessorService {
    * same message again does not draw earlier results to the later copy.
    */
   async compactStorage(store: RawDataStore, onProgress: (progress: CompactionProgress) => void = () => {}): Promise<CompactionReport> {
-    await this.stopBackgroundCompaction();
-    this.cancelRequested = false;
-    const report = await this.runCompaction(store, onProgress, () => this.cancelRequested);
-    this.cancelRequested = false;
-    if (!report.cancelled) {
-      this.markCompacted(store);
+    this.foregroundRuns++;
+    try {
+      await this.stopBackgroundCompaction();
+      this.cancelRequested = false;
+      const report = await this.runCompaction(store, onProgress, () => this.cancelRequested);
+      this.cancelRequested = false;
+      if (!report.cancelled) {
+        this.markCompacted(store);
+      }
+      return report;
+    } finally {
+      this.foregroundRuns--;
     }
-    return report;
   }
 
   private async runCompaction(
