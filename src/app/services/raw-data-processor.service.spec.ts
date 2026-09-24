@@ -43,6 +43,36 @@ describe('RawDataProcessorService', () => {
     expect(instrumentInterface.processHL7Message.mock.calls[0][1]).toBe(rawData);
   });
 
+  it('reports a run that stops because the raw data cannot be read as stopped, not complete', async () => {
+    const { service, instrumentInterface } = createService();
+    const message = 'MSH|^~\\&|ANALYZER|LAB001|LIS|LAB001|20260714113000||OUL^R22|MSG-001|P|2.5.1';
+    let batches = 0;
+    (instrumentInterface as any).dbService = {
+      countRawData: vi.fn().mockResolvedValue(3),
+      nextRawDataBatch: vi.fn(async (_store, _filter, _afterId, _limit, order) => {
+        if (order === 'desc') {
+          return [{ id: 3 }];
+        }
+        if (++batches === 1) {
+          return [{ id: 1, instrument_id: 'ANALYZER-1', data: message }];
+        }
+        throw new Error('MySQL connection lost');
+      })
+    };
+
+    const status = await service.reprocessMatching('mysql', {});
+
+    expect(status).toMatchObject({
+      success: 1,
+      failed: 0,
+      processedCount: 1,
+      totalCount: 3,
+      cancelled: false,
+      stoppedBy: 'Could not read raw data: MySQL connection lost',
+      currentItem: 'Reprocessing stopped'
+    });
+  });
+
   it('refuses to reprocess data when no instrument profile matches', async () => {
     const { service, instrumentInterface } = createService();
 

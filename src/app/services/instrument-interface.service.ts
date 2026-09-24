@@ -31,6 +31,12 @@ export interface ResultSaveOptions {
    */
   skipIdentical?: boolean;
   stats?: ResultSaveStats;
+  /**
+   * Counts the specimens in the data that could not be read. Reprocessing
+   * reads it: a transmission with one is not fully reprocessed, whatever
+   * else it yielded.
+   */
+  unreadable?: { count: number };
 }
 
 
@@ -175,7 +181,7 @@ export class InstrumentInterfaceService {
    */
   processHL7Message(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string, options: ResultSaveOptions = {}): Promise<boolean[]> {
     this.acknowledgeHL7(instrumentConnectionData, rawHl7Text);
-    return this.saveResults(this.readHL7Results(instrumentConnectionData, rawHl7Text), instrumentConnectionData, options);
+    return this.saveResults(this.readHL7Results(instrumentConnectionData, rawHl7Text, true, options.unreadable), instrumentConnectionData, options);
   }
 
   processHL7DataAlinity(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string, options: ResultSaveOptions = {}): Promise<boolean[]> {
@@ -202,17 +208,18 @@ export class InstrumentInterfaceService {
    * The results in one HL7 message, read and not saved or acknowledged.
    * @param report false to read quietly: nothing logged or counted as a
    * failure, for looking at a stored message rather than receiving one
+   * @param unreadable counts the specimens that could not be read
    */
-  readHL7Results(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string, report = true): any[] {
+  readHL7Results(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string, report = true, unreadable?: { count: number }): any[] {
     switch (instrumentConnectionData.machineType) {
       case 'abbott-alinity-m':
-        return this.readHL7Alinity(instrumentConnectionData, rawHl7Text, report);
+        return this.readHL7Alinity(instrumentConnectionData, rawHl7Text, report, unreadable);
       case 'roche-cobas-6800':
       case 'roche-cobas-8800':
-        return this.readHL7Roche68008800(instrumentConnectionData, rawHl7Text, report);
+        return this.readHL7Roche68008800(instrumentConnectionData, rawHl7Text, report, unreadable);
       default:
         // The cobas 5800 is read as any other HL7 analyzer.
-        return this.readHL7Generic(instrumentConnectionData, rawHl7Text, report);
+        return this.readHL7Generic(instrumentConnectionData, rawHl7Text, report, unreadable);
     }
   }
 
@@ -256,14 +263,15 @@ export class InstrumentInterfaceService {
 
   /**
    * Reads each specimen with `read`. A specimen that cannot be read is
-   * reported and skipped, so it does not take the results of the other
-   * specimens in the message with it.
+   * reported, counted in `unreadable` and skipped, so it does not take the
+   * results of the other specimens in the message with it.
    */
   private readEachSpecimen(
     instrumentConnectionData: InstrumentConnectionStack,
     rawHl7Text: string,
     report: boolean,
-    read: (specimen: ReturnType<HL7HelperService['hl7Specimens']>[number]) => any | null
+    read: (specimen: ReturnType<HL7HelperService['hl7Specimens']>[number]) => any | null,
+    unreadable?: { count: number }
   ): any[] {
     const results: any[] = [];
     for (const specimen of this.hl7SpecimensIn(instrumentConnectionData, rawHl7Text, report)) {
@@ -273,6 +281,9 @@ export class InstrumentInterfaceService {
           results.push(result);
         }
       } catch (error) {
+        if (unreadable) {
+          unreadable.count++;
+        }
         this.reportUnreadableSpecimen(instrumentConnectionData, 'Failed to read an HL7 specimen: ' + error, report);
       }
     }
@@ -322,7 +333,7 @@ export class InstrumentInterfaceService {
     return sampleResult;
   }
 
-  private readHL7Alinity(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string, report = true): any[] {
+  private readHL7Alinity(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string, report = true, unreadable?: { count: number }): any[] {
     return this.readEachSpecimen(instrumentConnectionData, rawHl7Text, report, specimen => {
       // For Alinity, the first OBX of each SPM is its result
       const singleObx = specimen.obx[0];
@@ -336,10 +347,10 @@ export class InstrumentInterfaceService {
       return this.hl7SampleResult(
         instrumentConnectionData, specimen, singleObx, ids, this.hl7Helper.getHL7ResultStatusType(singleObx)
       );
-    });
+    }, unreadable);
   }
 
-  private readHL7Generic(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string, report = true): any[] {
+  private readHL7Generic(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string, report = true, unreadable?: { count: number }): any[] {
     return this.readEachSpecimen(instrumentConnectionData, rawHl7Text, report, specimen => {
       let sampleNumber = specimen.spm.get(1).toInteger();
       if (Number.isNaN(sampleNumber)) {
@@ -358,10 +369,10 @@ export class InstrumentInterfaceService {
       return this.hl7SampleResult(
         instrumentConnectionData, specimen, singleObx, ids, this.hl7Helper.getHL7ResultStatusType(singleObx)
       );
-    });
+    }, unreadable);
   }
 
-  private readHL7Roche68008800(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string, report = true): any[] {
+  private readHL7Roche68008800(instrumentConnectionData: InstrumentConnectionStack, rawHl7Text: string, report = true, unreadable?: { count: number }): any[] {
     return this.readEachSpecimen(instrumentConnectionData, rawHl7Text, report, specimen => {
       const obxArray = specimen.obx;
       let singleObx = null;
@@ -390,7 +401,7 @@ export class InstrumentInterfaceService {
       return this.hl7SampleResult(
         instrumentConnectionData, specimen, singleObx, ids, this.hl7Helper.getHL7ResultStatusType(singleObx)
       );
-    });
+    }, unreadable);
   }
 
   private saveResults(sampleResults: any[], instrumentConnectionData: InstrumentConnectionStack, options: ResultSaveOptions): Promise<boolean[]> {
@@ -877,7 +888,6 @@ export class InstrumentInterfaceService {
         if (options.stats) {
           options.stats.unchanged++;
         }
-        this.utilitiesService.logger('info', 'Already stored, not stored again : ' + record.test_id + '|' + record.order_id, record.instrument_id);
         outcomes.push(true);
         continue;
       }

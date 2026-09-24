@@ -214,6 +214,25 @@ describe('reading an HL7 message', () => {
 
     expect(s.rows('SELECT order_id FROM orders')).toHaveLength(COBAS_4800_RUN.length - 1);
   });
+
+  it('reports a reprocessed transmission as failed when one specimen cannot be read', async () => {
+    const s = setup('hl7', 'roche-cobas-4800');
+    const hl7Helper = (s.service as any).hl7Helper;
+    const extract = hl7Helper.extractHL7OrderAndTestIDs.bind(hl7Helper);
+    const unreadableSample = COBAS_4800_RUN[1].sampleId;
+    vi.spyOn(hl7Helper, 'extractHL7OrderAndTestIDs').mockImplementation((...args: any[]) => {
+      const ids = extract(...args);
+      if (ids.order_id === unreadableSample) {
+        throw new Error('unreadable specimen');
+      }
+      return ids;
+    });
+    await s.receive(mllp(COBAS_4800_MESSAGE));
+
+    const status = await s.processor.reprocessMatching('sqlite', {});
+
+    expect(status).toMatchObject({ success: 0, failed: 1, unchanged: COBAS_4800_RUN.length - 1 });
+  });
 });
 
 describe('reprocessing', () => {

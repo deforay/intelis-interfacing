@@ -29,6 +29,11 @@ export interface ReprocessingStatus {
   /** Results already stored exactly as read, so not stored again */
   unchanged: number;
   cancelled: boolean;
+  /**
+   * Why the run stopped before the end of its range, when the raw data could
+   * not be read. The transmissions after it were not reprocessed.
+   */
+  stoppedBy: string | null;
 }
 
 /** What compacting one database did. */
@@ -93,7 +98,8 @@ export class RawDataProcessorService {
       errors: [],
       saved: 0,
       unchanged: 0,
-      cancelled: false
+      cancelled: false,
+      stoppedBy: null
     };
   }
 
@@ -184,13 +190,15 @@ export class RawDataProcessorService {
         }
       }
     } catch (error) {
-      // A batch that cannot be read ends the run; what was done is reported.
-      status.errors.push(`Could not read raw data: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      // A batch that cannot be read ends the run. What was done is reported,
+      // and so is the stop: the rest of the range was not reprocessed.
+      status.stoppedBy = `Could not read raw data: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      status.errors.push(status.stoppedBy);
     }
 
     status.inProgress = false;
     status.cancelled = this.cancelRequested;
-    status.currentItem = status.cancelled ? 'Reprocessing stopped' : 'Reprocessing complete';
+    status.currentItem = status.cancelled || status.stoppedBy ? 'Reprocessing stopped' : 'Reprocessing complete';
     this.cancelRequested = false;
     publish();
     return { ...status, ...stats };
@@ -279,9 +287,15 @@ export class RawDataProcessorService {
         // way live processing does, or framing bytes end up in the stored
         // records and line breaks are split differently.
         const hl7Message = this.instrumentInterfaceService['hl7Helper'].unwrapMLLPBlock(rawData);
+        const unreadable = { count: 0 };
         persistenceResults = await this.withPersistenceTimeout(
-          this.instrumentInterfaceService.processHL7Message(instrumentConnectionData, hl7Message, options)
+          this.instrumentInterfaceService.processHL7Message(instrumentConnectionData, hl7Message, { ...options, unreadable })
         );
+        // A specimen that could not be read is a result not recovered, as an
+        // unreadable ASTM order is.
+        if (unreadable.count > 0) {
+          return 'failed';
+        }
         if (persistenceResults.length === 0 && RawDataProcessorService.isHL7WithoutResults(hl7Message)) {
           return 'empty';
         }
