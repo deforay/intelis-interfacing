@@ -71,8 +71,19 @@ export class RawDataProcessorService {
   // not linked to it.
   private static readonly LINK_CLOCK_SKEW_SECONDS = 5 * 60;
 
+  // Compacting starts this long after the application does, so it never
+  // competes with connecting to instruments and the first results.
+  private static readonly AUTOMATIC_COMPACTION_DELAY_MS = 2 * 60_000;
+  private static readonly COMPACTED_STORES_KEY = 'storageCompacted';
+
   private reprocessingStatus = new BehaviorSubject<ReprocessingStatus>(RawDataProcessorService.idleStatus());
   private cancelRequested = false;
+  /** The compaction running in the background, if any. */
+  private backgroundRun: Promise<void> | null = null;
+  private backgroundStopRequested = false;
+  private readonly backgroundCompaction = new BehaviorSubject<CompactionProgress | null>(null);
+  /** Progress of the compaction running in the background, or null. */
+  public readonly backgroundCompaction$ = this.backgroundCompaction.asObservable();
 
   private instrumentsSettings: any = null;
   private commonSettings: any = null;
@@ -107,9 +118,87 @@ export class RawDataProcessorService {
     return this.reprocessingStatus.asObservable();
   }
 
+  /**
+   * Compacts, once, the results stored before 4.8.0, in the background a
+   * little after the application starts. It links and trims exactly as
+   * Compact Storage does, and does not rewrite the database: freed space is
+   * reused inside it. A database compacted to the end is recorded and never
+   * walked again; one that was stopped is compacted again next time.
+   */
+  scheduleAutomaticCompaction(delayMs = RawDataProcessorService.AUTOMATIC_COMPACTION_DELAY_MS): void {
+    setTimeout(() => {
+      this.backgroundStopRequested = false;
+      this.backgroundRun = this.compactAutomatically().finally(() => {
+        this.backgroundRun = null;
+        this.backgroundCompaction.next(null);
+      });
+    }, delayMs);
+  }
+
+  /** Stops the background compaction, if one is running, and waits for it. */
+  async stopBackgroundCompaction(): Promise<void> {
+    if (!this.backgroundRun) {
+      return;
+    }
+    this.backgroundStopRequested = true;
+    await this.backgroundRun;
+  }
+
+  private async compactAutomatically(): Promise<void> {
+    if (this.reprocessingStatus.value.inProgress) {
+      return;
+    }
+    const dbService = this.instrumentInterfaceService.dbService;
+    const stores: RawDataStore[] = (await dbService.rawDataStore()) === 'mysql' ? ['sqlite', 'mysql'] : ['sqlite'];
+    for (const store of stores) {
+      if (this.backgroundStopRequested) {
+        return;
+      }
+      if (this.isCompacted(store)) {
+        continue;
+      }
+      try {
+        // A database with no result left to link has nothing to compact.
+        if (await dbService.countUnlinkedResults(store) > 0) {
+          const report = await this.runCompaction(store, progress => this.backgroundCompaction.next(progress), () => this.backgroundStopRequested);
+          if (report.cancelled) {
+            return;
+          }
+          this.utilsService.logger('info',
+            `Storage compacted (${store === 'mysql' ? 'MySQL' : 'this computer'}): ${report.linkedResults} results linked, ` +
+            `${report.trimmedResults} cut to their own records.`, null);
+        }
+        this.markCompacted(store);
+      } catch (error) {
+        // It is tried again at the next start. What it did stays done.
+        this.utilsService.logger('error', `Storage compaction stopped: ${error instanceof Error ? error.message : error}`, null);
+        return;
+      }
+    }
+  }
+
+  private isCompacted(store: RawDataStore): boolean {
+    return !!(this.electronStoreService.get(RawDataProcessorService.COMPACTED_STORES_KEY) ?? {})[this.compactedStoreKey(store)];
+  }
+
+  private markCompacted(store: RawDataStore): void {
+    const compacted = this.electronStoreService.get(RawDataProcessorService.COMPACTED_STORES_KEY) ?? {};
+    this.electronStoreService.set(RawDataProcessorService.COMPACTED_STORES_KEY, { ...compacted, [this.compactedStoreKey(store)]: new Date().toISOString() });
+  }
+
+  /** One record per database: MySQL by server and database, as either can change. */
+  private compactedStoreKey(store: RawDataStore): string {
+    if (store === 'sqlite') {
+      return 'sqlite';
+    }
+    const settings = this.electronStoreService.get('commonConfig') ?? {};
+    return `mysql:${settings.mysqlHost ?? ''}:${settings.mysqlPort ?? ''}/${settings.mysqlDb ?? ''}`;
+  }
+
   /** Stops a running reprocess or compaction after the transmission in hand. */
   cancel(): void {
     this.cancelRequested = true;
+    this.backgroundStopRequested = true;
   }
 
   /** Reprocesses the given stored transmissions, in the order given. */
@@ -147,6 +236,8 @@ export class RawDataProcessorService {
   }
 
   private async runReprocessing(totalCount: number, nextBatch: () => Promise<any[]>): Promise<ReprocessingStatus> {
+    // Reprocessing and compacting share the Stop request, so one at a time.
+    await this.stopBackgroundCompaction();
     this.cancelRequested = false;
     const stats: ResultSaveStats = { saved: 0, unchanged: 0 };
     const status: ReprocessingStatus = {
@@ -407,8 +498,22 @@ export class RawDataProcessorService {
    * same message again does not draw earlier results to the later copy.
    */
   async compactStorage(store: RawDataStore, onProgress: (progress: CompactionProgress) => void = () => {}): Promise<CompactionReport> {
-    const dbService = this.instrumentInterfaceService.dbService;
+    await this.stopBackgroundCompaction();
     this.cancelRequested = false;
+    const report = await this.runCompaction(store, onProgress, () => this.cancelRequested);
+    this.cancelRequested = false;
+    if (!report.cancelled) {
+      this.markCompacted(store);
+    }
+    return report;
+  }
+
+  private async runCompaction(
+    store: RawDataStore,
+    onProgress: (progress: CompactionProgress) => void,
+    shouldStop: () => boolean
+  ): Promise<CompactionReport> {
+    const dbService = this.instrumentInterfaceService.dbService;
     this.instrumentsSettings = this.electronStoreService.get('instrumentsConfig');
 
     const report: CompactionReport = {
@@ -417,7 +522,7 @@ export class RawDataProcessorService {
     const totalTransmissions = await dbService.countRawData(store, {});
     let beforeId = Number.MAX_SAFE_INTEGER;
 
-    while (!this.cancelRequested) {
+    while (!shouldStop()) {
       const batch = await dbService.nextRawDataBatch(store, {}, beforeId, RawDataProcessorService.BATCH_SIZE, 'desc');
       if (batch.length === 0) {
         break;
@@ -425,7 +530,7 @@ export class RawDataProcessorService {
       beforeId = Number(batch[batch.length - 1].id);
 
       for (const entry of batch) {
-        if (this.cancelRequested) {
+        if (shouldStop()) {
           break;
         }
         report.transmissions++;
@@ -440,8 +545,7 @@ export class RawDataProcessorService {
       }
     }
 
-    report.cancelled = this.cancelRequested;
-    this.cancelRequested = false;
+    report.cancelled = shouldStop();
     return report;
   }
 

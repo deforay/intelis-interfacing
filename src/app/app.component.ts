@@ -6,6 +6,7 @@ import { DatabaseService } from './services/database.service';
 import { IntelisResultSyncService } from './services/intelis-result-sync.service';
 import { IntelisUsageSyncService } from './services/intelis-usage-sync.service';
 import { ResultWebhookSyncService } from './services/result-webhook-sync.service';
+import { RawDataProcessorService } from './services/raw-data-processor.service';
 
 @Component({
   standalone: false,
@@ -23,7 +24,8 @@ export class AppComponent implements OnInit {
     private databaseService: DatabaseService,
     private intelisResultSync: IntelisResultSyncService,
     private intelisUsageSync: IntelisUsageSyncService,
-    private resultWebhookSync: ResultWebhookSyncService
+    private resultWebhookSync: ResultWebhookSyncService,
+    private rawDataProcessor: RawDataProcessorService
   ) {
     this.translate.setFallbackLang('en');
 
@@ -32,6 +34,7 @@ export class AppComponent implements OnInit {
       this.intelisResultSync.start();
       this.intelisUsageSync.start();
       this.resultWebhookSync.start();
+      this.rawDataProcessor.scheduleAutomaticCompaction();
       console.log(process.env);
       console.log('Run in electron');
       console.log('Electron ipcRenderer', this.electronService.ipcRenderer);
