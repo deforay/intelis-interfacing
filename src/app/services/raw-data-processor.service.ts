@@ -6,6 +6,8 @@ import { InstrumentInterfaceService, ResultSaveOptions, ResultSaveStats } from '
 import { InstrumentConnectionStack } from '../interfaces/instrument-connections.interface';
 import { RawDataFilter, RawDataStore } from '../interfaces/raw-machine-data.interface';
 import { effectiveResultRules } from '../../../shared/result-rules';
+import { formatInTimeZone } from '../../../shared/time-zone';
+import type { SettledResults } from './database.service';
 
 type ReprocessOutcome = 'stored' | 'empty' | 'failed';
 
@@ -75,6 +77,12 @@ export class RawDataProcessorService {
   // competes with connecting to instruments and the first results.
   private static readonly AUTOMATIC_COMPACTION_DELAY_MS = 2 * 60_000;
   private static readonly COMPACTED_STORES_KEY = 'storageCompacted';
+  // Read by the main process, which rewrites SQLite at the next start.
+  private static readonly RECLAIM_PENDING_KEY = 'storageReclaimPending';
+  // A rewrite at start is asked for only when compaction freed this much.
+  private static readonly RECLAIM_MIN_CHARACTERS = 10_000_000;
+  // The background compaction leaves results this recent alone.
+  private static readonly SETTLED_AFTER_DAYS = 7;
 
   private reprocessingStatus = new BehaviorSubject<ReprocessingStatus>(RawDataProcessorService.idleStatus());
   private cancelRequested = false;
@@ -186,9 +194,14 @@ export class RawDataProcessorService {
     try {
       // A database with no result left to link has nothing to compact.
       if (await this.instrumentInterfaceService.dbService.countUnlinkedResults(store) > 0) {
-        const report = await this.runCompaction(store, progress => this.backgroundCompaction.next(progress), () => this.backgroundStopRequested);
+        const report = await this.runCompaction(
+          store, progress => this.backgroundCompaction.next(progress), () => this.backgroundStopRequested, this.settledResults(store)
+        );
         if (report.cancelled) {
           return false;
+        }
+        if (store === 'sqlite' && report.charactersRemoved >= RawDataProcessorService.RECLAIM_MIN_CHARACTERS) {
+          this.electronStoreService.set(RawDataProcessorService.RECLAIM_PENDING_KEY, { sqlite: new Date().toISOString() });
         }
         this.utilsService.logger('info',
           `Storage compacted (${store === 'mysql' ? 'MySQL' : 'this computer'}): ${report.linkedResults} results linked, ` +
@@ -201,6 +214,20 @@ export class RawDataProcessorService {
       this.utilsService.logger('error', `Storage compaction stopped: ${error instanceof Error ? error.message : error}`, null);
       return false;
     }
+  }
+
+  /**
+   * What the background compaction may change: results already sent to the
+   * LIS, and to the result webhook once it has been set up, and stored more
+   * than a week ago. Anything still to be sent goes with the text it was
+   * stored with.
+   */
+  private settledResults(store: RawDataStore): SettledResults {
+    const cutoff = new Date(Date.now() - RawDataProcessorService.SETTLED_AFTER_DAYS * 24 * 60 * 60 * 1000);
+    return {
+      storedBefore: formatInTimeZone(cutoff, this.electronStoreService.get('commonConfig')?.timeZone),
+      webhookDelivered: store === 'sqlite' && !!this.electronStoreService.get('resultWebhook')
+    };
   }
 
   private isCompacted(store: RawDataStore): boolean {
@@ -555,7 +582,8 @@ export class RawDataProcessorService {
   private async runCompaction(
     store: RawDataStore,
     onProgress: (progress: CompactionProgress) => void,
-    shouldStop: () => boolean
+    shouldStop: () => boolean,
+    settled: SettledResults | null = null
   ): Promise<CompactionReport> {
     const dbService = this.instrumentInterfaceService.dbService;
     this.instrumentsSettings = this.electronStoreService.get('instrumentsConfig');
@@ -578,7 +606,7 @@ export class RawDataProcessorService {
           break;
         }
         report.transmissions++;
-        await this.compactTransmission(store, entry, report);
+        await this.compactTransmission(store, entry, report, settled);
         onProgress({
           store,
           transmissionsRead: report.transmissions,
@@ -593,7 +621,7 @@ export class RawDataProcessorService {
     return report;
   }
 
-  private async compactTransmission(store: RawDataStore, entry: any, report: CompactionReport): Promise<void> {
+  private async compactTransmission(store: RawDataStore, entry: any, report: CompactionReport, settled: SettledResults | null): Promise<void> {
     const dbService = this.instrumentInterfaceService.dbService;
     const instrumentSettings = this.getInstrumentSettings(entry.instrument_id || entry.machine);
     if (!instrumentSettings) {
@@ -626,7 +654,7 @@ export class RawDataProcessorService {
       if (!orderId) {
         continue;
       }
-      for (const row of await dbService.unlinkedResultsFor(store, orderId, notBefore)) {
+      for (const row of await dbService.unlinkedResultsFor(store, orderId, notBefore, settled)) {
         const rowText = String(row.raw_text ?? '');
         const records = RawDataProcessorService.recordsOf(rowText);
         if (!records || !heldText.some(text => text.includes(`\n${records}\n`))) {

@@ -122,11 +122,22 @@ background while results keep arriving. **Settings → Troubleshooting →
 Storage** shows its progress, and the application log records what it did.
 If the tool closes first, it starts again at the next start.
 
-The automatic run does not rewrite the database. The freed space is reused for
-new data, so the file stops growing, but it does not shrink. Compact Storage
-does both steps and gives the space back to the disk.
+The automatic run changes only results that are settled:
 
-To reclaim the space on the disk:
+- already sent to the LIS, or refused by it;
+- already delivered by result forwarding, when forwarding has been set up;
+- stored more than a week ago.
+
+It leaves other results whole, and does not come back to them. Compact Storage
+covers them.
+
+When the automatic run frees space in this computer's database, the tool gives
+it back to the disk at its next start, before it opens its window and so before
+any instrument can connect. This takes seconds on a compacted database. The
+MySQL database is not rewritten automatically, because other installations or
+the LIS can be using it at the same time.
+
+To compact everything at once, and give the space back to the disk now:
 
 1. Take a backup. See [backup and restore](backup-restore.md).
 2. Wait until no analyzer is sending. A result that arrives during the final
