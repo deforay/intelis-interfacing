@@ -534,33 +534,91 @@
 
                   <div class="instrument-body">
                     <div class="form-section">
+                      <h4>Instrument Details</h4>
+                      <div class="field-row instrument-fields">
+                        <div class="form-group">
+                          <label [attr.for]="'instrument-' + i + '-analyzerMachineType'">Analyzer Type</label>
+                          <div class="custom-select-wrapper">
+                            <select [id]="'instrument-' + i + '-analyzerMachineType'" formControlName="analyzerMachineType" class="form-control" required
+                              (change)="onMachineTypeChange(i)">
+                              <optgroup label="Roche">
+                                <option value="roche-cobas-taqman">Roche Cobas Taqman</option>
+                                <option value="roche-cobas-4800">Roche Cobas 4800</option>
+                                <option value="roche-cobas-5800">Roche Cobas 5800</option>
+                                <option value="roche-cobas-6800">Roche Cobas 6800/8800</option>
+                              </optgroup>
+                              <optgroup label="Abbott">
+                                <option value="abbott-m2000">Abbott m2000</option>
+                                <option value="abbott-alinity-m">Abbott Alinity M</option>
+                              </optgroup>
+                              <optgroup label="Cepheid">
+                                <option value="cepheid-genexpert">Cepheid GeneXpert</option>
+                              </optgroup>
+                              <optgroup label="Other">
+                                <option value="other-astm-nonchecksum">Other ASTM (without checksum)</option>
+                                <option value="other-astm-checksum">Other ASTM (with checksum)</option>
+                                <option value="other-hl7">Other HL7</option>
+                              </optgroup>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div class="form-group">
+                          <label [attr.for]="'instrument-' + i + '-analyzerMachineName'">Instrument Name/Code</label>
+                          <input [id]="'instrument-' + i + '-analyzerMachineName'" type="text" formControlName="analyzerMachineName" class="form-control"
+                            placeholder="e.g., Roche-Cobas-01" required
+                            [matAutocomplete]="autoInstrumentName">
+                          <mat-autocomplete #autoInstrumentName="matAutocomplete">
+                            <mat-option *ngFor="let name of filterInstrumentNames($safeNavigationMigration(instrument.get('analyzerMachineName')?.value))"
+                              [value]="name">
+                              {{ name }}
+                            </mat-option>
+                          </mat-autocomplete>
+                          <div class="error-message"
+                            *ngIf="instrument.get('analyzerMachineName')?.hasError('duplicateInstrumentName')">
+                            This instrument name is already in use
+                          </div>
+                        </div>
+
+                        <div class="form-group">
+                          <label [attr.for]="'instrument-' + i + '-displayorder'">Display Order</label>
+                          <div class="input-with-icon">
+                            <i class="fas fa-sort-numeric-down input-icon"></i>
+                            <input [id]="'instrument-' + i + '-displayorder'" type="number" formControlName="displayorder" class="form-control with-icon"
+                              placeholder="1">
+                          </div>
+                          <small class="help-text">Lower numbers are listed first.</small>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="form-section">
                       <h4>Connection Settings</h4>
-
-                      <div class="form-group">
-                        <label [attr.for]="'instrument-' + i + '-interfaceConnectionMode'">Connection Mode</label>
-                        <div class="custom-select-wrapper">
-                          <select [id]="'instrument-' + i + '-interfaceConnectionMode'" formControlName="interfaceConnectionMode" class="form-control" required
-                            (change)="onConnectionModeChange(i, $event)">
-                            <option value="tcpclient">TCP Client - Connect to instrument</option>
-                            <option value="tcpserver">TCP Server - Instrument connects to me</option>
-                          </select>
+                      <div class="field-row connection-fields">
+                        <div class="form-group">
+                          <label [attr.for]="'instrument-' + i + '-interfaceConnectionMode'">Connection Mode</label>
+                          <div class="custom-select-wrapper">
+                            <select [id]="'instrument-' + i + '-interfaceConnectionMode'" formControlName="interfaceConnectionMode" class="form-control" required
+                              (change)="onConnectionModeChange(i, $event)">
+                              <option value="tcpclient">TCP Client - Connect to instrument</option>
+                              <option value="tcpserver">TCP Server - Instrument connects to me</option>
+                            </select>
+                          </div>
                         </div>
-                      </div>
 
-                      <div class="form-group">
-                        <label [attr.for]="'instrument-' + i + '-interfaceCommunicationProtocol'">Communication Protocol</label>
-                        <div class="custom-select-wrapper">
-                          <select [id]="'instrument-' + i + '-interfaceCommunicationProtocol'" formControlName="interfaceCommunicationProtocol" class="form-control" required>
-                            <option value="astm-nonchecksum">ASTM (without checksum)</option>
-                            <option value="astm-checksum">ASTM (with checksum)</option>
-                            <option value="hl7">HL7</option>
-                          </select>
+                        <div class="form-group">
+                          <label [attr.for]="'instrument-' + i + '-interfaceCommunicationProtocol'">Communication Protocol</label>
+                          <div class="custom-select-wrapper">
+                            <select [id]="'instrument-' + i + '-interfaceCommunicationProtocol'" formControlName="interfaceCommunicationProtocol" class="form-control" required>
+                              <option value="astm-nonchecksum">ASTM (without checksum)</option>
+                              <option value="astm-checksum">ASTM (with checksum)</option>
+                              <option value="hl7">HL7</option>
+                            </select>
+                          </div>
+                          <div class="warning-message" *ngIf="protocolWarning(i) as warning">{{ warning }}</div>
                         </div>
-                        <div class="warning-message" *ngIf="protocolWarning(i) as warning">{{ warning }}</div>
-                      </div>
 
-                      <div class="form-row">
-                        <div class="form-group half-width">
+                        <div class="form-group">
                           <label [attr.for]="'instrument-' + i + '-analyzerMachineHost'">IP Address</label>
                           <div class="custom-select-wrapper"
                             *ngIf="instrument.get('interfaceConnectionMode')?.value === 'tcpserver'">
@@ -572,7 +630,8 @@
                             formControlName="analyzerMachineHost" class="form-control" placeholder="192.168.1.100"
                             required>
                         </div>
-                        <div class="form-group half-width">
+
+                        <div class="form-group">
                           <label [attr.for]="'instrument-' + i + '-analyzerMachinePort'">Port Number</label>
                           <input [id]="'instrument-' + i + '-analyzerMachinePort'" type="text" formControlName="analyzerMachinePort" class="form-control" placeholder="3120"
                             required (input)="cleanPortNumber($event, i)">
@@ -583,64 +642,6 @@
                             This IP:Port combination is already in use
                           </div>
                         </div>
-                      </div>
-                    </div>
-
-                    <div class="form-section">
-                      <h4>Instrument Details</h4>
-
-                      <div class="form-group">
-                        <label [attr.for]="'instrument-' + i + '-analyzerMachineType'">Analyzer Type</label>
-                        <div class="custom-select-wrapper">
-                          <select [id]="'instrument-' + i + '-analyzerMachineType'" formControlName="analyzerMachineType" class="form-control" required
-                            (change)="onMachineTypeChange(i)">
-                            <optgroup label="Roche">
-                              <option value="roche-cobas-taqman">Roche Cobas Taqman</option>
-                              <option value="roche-cobas-4800">Roche Cobas 4800</option>
-                              <option value="roche-cobas-5800">Roche Cobas 5800</option>
-                              <option value="roche-cobas-6800">Roche Cobas 6800/8800</option>
-                            </optgroup>
-                            <optgroup label="Abbott">
-                              <option value="abbott-m2000">Abbott m2000</option>
-                              <option value="abbott-alinity-m">Abbott Alinity M</option>
-                            </optgroup>
-                            <optgroup label="Cepheid">
-                              <option value="cepheid-genexpert">Cepheid GeneXpert</option>
-                            </optgroup>
-                            <optgroup label="Other">
-                              <option value="other-astm-nonchecksum">Other ASTM (without checksum)</option>
-                              <option value="other-astm-checksum">Other ASTM (with checksum)</option>
-                              <option value="other-hl7">Other HL7</option>
-                            </optgroup>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div class="form-group">
-                        <label [attr.for]="'instrument-' + i + '-analyzerMachineName'">Instrument Name/Code</label>
-                        <input [id]="'instrument-' + i + '-analyzerMachineName'" type="text" formControlName="analyzerMachineName" class="form-control"
-                          placeholder="e.g., Roche-Cobas-01" required
-                          [matAutocomplete]="autoInstrumentName">
-                        <mat-autocomplete #autoInstrumentName="matAutocomplete">
-                          <mat-option *ngFor="let name of filterInstrumentNames($safeNavigationMigration(instrument.get('analyzerMachineName')?.value))"
-                            [value]="name">
-                            {{ name }}
-                          </mat-option>
-                        </mat-autocomplete>
-                        <div class="error-message"
-                          *ngIf="instrument.get('analyzerMachineName')?.hasError('duplicateInstrumentName')">
-                          This instrument name is already in use
-                        </div>
-                      </div>
-
-                      <div class="form-group">
-                        <label [attr.for]="'instrument-' + i + '-displayorder'">Display Order</label>
-                        <div class="input-with-icon">
-                          <i class="fas fa-sort-numeric-down input-icon"></i>
-                          <input [id]="'instrument-' + i + '-displayorder'" type="number" formControlName="displayorder" class="form-control with-icon"
-                            placeholder="1">
-                        </div>
-                        <small class="help-text">Instruments will be sorted by this value</small>
                       </div>
                     </div>
 
