@@ -235,6 +235,26 @@ describe('reading an HL7 message', () => {
   });
 });
 
+describe('reprocessing a specimen with no result', () => {
+  it('stores nothing for a specimen group with only a run-time range, and reports reprocessing it as failed', async () => {
+    const s = setup('hl7', 'roche-cobas-4800');
+    // The second group keeps its run-time range but lost its result OBX.
+    const groups = COBAS_4800_MESSAGE.split('\r');
+    let spmSeen = 0;
+    const message = groups.filter(segment => {
+      if (segment.startsWith('SPM|')) spmSeen++;
+      return !(spmSeen === 2 && segment.startsWith('OBX|2|'));
+    }).join('\r');
+    await s.receive(mllp(message));
+    expect(s.rows('SELECT results FROM orders WHERE order_id = ?', [COBAS_4800_RUN[1].sampleId])).toEqual([]);
+    expect(s.rows('SELECT order_id FROM orders')).toHaveLength(COBAS_4800_RUN.length - 1);
+
+    const status = await s.processor.reprocessMatching('sqlite', {});
+
+    expect(status).toMatchObject({ success: 0, failed: 1, unchanged: COBAS_4800_RUN.length - 1 });
+  });
+});
+
 describe('reprocessing', () => {
   it('stores nothing again when every result is already stored as read', async () => {
     const s = setup('hl7', 'roche-cobas-4800');
