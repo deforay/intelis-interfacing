@@ -1019,7 +1019,8 @@
                 result's own records. It does this once, by itself, a few minutes after it starts, for results already
                 sent and more than a week old. The freed space goes back to the disk at the next start, before any
                 instrument connects. A result whose transmission is not stored keeps its copy. Stored transmissions
-                are never changed or removed. Compact Storage does all of this at once, for every result.
+                are never changed or removed. Compact Storage links every result now, then offers to restart the tool
+                to give the space back to the disk at once.
               </p>
               <table class="storage-usage" *ngIf="storageUsage">
                 <tr>

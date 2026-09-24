@@ -1,5 +1,5 @@
 import { RawDataProcessorService, CompactionProgress, CompactionReport } from '../../services/raw-data-processor.service';
-import { Component, OnInit, OnDestroy, ChangeDetectionStrategy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { FormBuilder, FormGroup, FormArray, Validators, AbstractControl, ValidatorFn } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ElectronService } from '../../core/services';
@@ -159,7 +159,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
     private readonly intelisConnectionService: IntelisConnectionService,
     private readonly resultWebhookService: ResultWebhookService,
     private readonly resultWebhookSync: ResultWebhookSyncService,
-    private readonly rawDataProcessor: RawDataProcessorService
+    private readonly rawDataProcessor: RawDataProcessorService,
+    private readonly cdRef: ChangeDetectorRef
   ) {
 
     const commonSettingsStore = this.electronStoreService.get('commonConfig');
@@ -823,61 +824,110 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
       const stores: ('sqlite' | 'mysql')[] = usage.mysql.available ? ['sqlite', 'mysql'] : ['sqlite'];
       const unlinked = stores.reduce((total, store) => total + usage[store].results - usage[store].linkedResults, 0);
-      if (unlinked === 0) {
-        this.storageMessage = 'Every result is already linked to its transmission. Nothing to compact.';
-        return;
-      }
-
-      const mysqlNote = usage.mysql.available ? ' Both this computer\'s database and the MySQL database are compacted.' : '';
-      const confirmation = await this.electronService.ipcRenderer.invoke('show-confirm-dialog', {
-        type: 'warning',
-        buttons: ['Cancel', 'Compact Storage'],
-        defaultId: 0,
-        cancelId: 0,
-        title: 'Compact Storage',
-        message: `Link ${unlinked.toLocaleString()} results to their stored transmissions?`,
-        detail:
-          'Each result is linked to the transmission it came from and keeps only its own records. ' +
-          'A result changes only when every record of its copy is in a stored transmission. ' +
-          'Stored transmissions are not changed or removed. No result is sent to the LIS again.' +
-          `${mysqlNote}\n\n` +
-          'On a large database this takes several minutes. At the end, the database is rewritten so the space ' +
-          'returns to the disk. Take a backup first, and run it when no analyzer is sending. A result that arrives ' +
-          'during the rewrite waits for it, and can be reported as not saved although it is saved.'
-      });
-      if (confirmation?.response !== 1) return;
-
-      const reports: CompactionReport[] = [];
-      // The background compaction waits until this run and its rewrites end.
-      await this.rawDataProcessor.holdingBackgroundCompaction(async () => {
-        for (const store of stores) {
-          const report = await this.rawDataProcessor.compactStorage(store, progress => {
-            this.compactionProgress = progress;
-          });
-          reports.push(report);
-          if (report.cancelled) break;
-          this.compactionProgress = null;
-          this.storageMessage = `Giving the freed space back to the disk (${store === 'mysql' ? 'MySQL' : 'this computer'})…`;
-          await this.databaseService.reclaimSpace(store);
+      const messages: string[] = [];
+      if (unlinked > 0) {
+        const reports = await this.compactStores(stores, unlinked);
+        if (!reports) return;
+        messages.push(...reports.map(report => this.describeCompaction(report)));
+        if (reports.some(report => report.cancelled)) {
+          this.storageMessage = messages.join(' ');
+          return;
         }
-      });
-
+      }
+      messages.push(await this.offerSqliteRewrite());
       await this.refreshStorageUsage();
-      this.storageMessage = reports.map(report => {
-        const where = report.store === 'mysql' ? 'MySQL' : 'This computer';
-        const skipped = report.skippedTransmissions
-          ? ` ${report.skippedTransmissions.toLocaleString()} transmissions were not read because no instrument in Settings has their name.`
-          : '';
-        const stopped = report.cancelled ? ' Stopped before the end; run it again to continue.' : '';
-        return `${where}: ${report.linkedResults.toLocaleString()} results linked, ${report.trimmedResults.toLocaleString()} ` +
-          `cut to their own records.${skipped}${stopped}`;
-      }).join(' ');
+      this.storageMessage = messages.filter(Boolean).join(' ');
     } catch (error) {
       this.storageMessage = `Compact Storage stopped: ${error?.message ?? error}. What it already did stays done. Stored transmissions are unchanged.`;
     } finally {
       this.compactionProgress = null;
       this.storageBusy = false;
+      // Replies from the main process arrive outside Angular's zone, so the
+      // card is redrawn here rather than whenever something else happens.
+      this.cdRef.detectChanges();
     }
+  }
+
+  /** Links and trims every unlinked result, after asking. Null when the operator cancels. */
+  private async compactStores(stores: ('sqlite' | 'mysql')[], unlinked: number): Promise<CompactionReport[] | null> {
+    const mysqlNote = stores.includes('mysql') ? ' Both this computer\'s database and the MySQL database are compacted.' : '';
+    const confirmation = await this.electronService.ipcRenderer.invoke('show-confirm-dialog', {
+      type: 'question',
+      buttons: ['Cancel', 'Compact Storage'],
+      defaultId: 1,
+      cancelId: 0,
+      title: 'Compact Storage',
+      message: `Link ${unlinked.toLocaleString()} results to their stored transmissions?`,
+      detail:
+        'Each result is linked to the transmission it came from and keeps only its own records. ' +
+        'A result changes only when every record of its copy is in a stored transmission. ' +
+        'Stored transmissions are not changed or removed. No result is sent to the LIS again.' +
+        `${mysqlNote}\n\n` +
+        'On a large database this takes several minutes. Results keep arriving while it runs.'
+    });
+    if (confirmation?.response !== 1) return null;
+
+    const reports: CompactionReport[] = [];
+    // The background compaction waits until this run ends.
+    await this.rawDataProcessor.holdingBackgroundCompaction(async () => {
+      for (const store of stores) {
+        const report = await this.rawDataProcessor.compactStorage(store, progress => {
+          this.compactionProgress = progress;
+          this.cdRef.detectChanges();
+        });
+        reports.push(report);
+        if (report.cancelled) break;
+        this.compactionProgress = null;
+        if (store === 'mysql' && report.trimmedResults > 0) {
+          this.storageMessage = 'Giving the freed space back to the disk (MySQL)…';
+          await this.databaseService.reclaimMysqlSpace();
+        }
+      }
+    });
+    return reports;
+  }
+
+  private describeCompaction(report: CompactionReport): string {
+    const where = report.store === 'mysql' ? 'MySQL' : 'This computer';
+    const skipped = report.skippedTransmissions
+      ? ` ${report.skippedTransmissions.toLocaleString()} transmissions were not read because no instrument in Settings has their name.`
+      : '';
+    const stopped = report.cancelled ? ' Stopped before the end; run it again to continue.' : '';
+    return `${where}: ${report.linkedResults.toLocaleString()} results linked, ${report.trimmedResults.toLocaleString()} ` +
+      `cut to their own records.${skipped}${stopped}`;
+  }
+
+  /**
+   * This computer's database is rewritten at a start, before any instrument
+   * can connect, never while results may be arriving. Asks whether to
+   * restart now or leave it to the next start.
+   */
+  private async offerSqliteRewrite(): Promise<string> {
+    const freeBytes = await this.databaseService.sqliteFreeBytes();
+    if (freeBytes < 1024 * 1024) {
+      return 'This computer\'s database has no free space worth giving back to the disk.';
+    }
+    const autoConnect = this.electronStoreService.get('commonConfig')?.interfaceAutoConnect === 'yes';
+    const choice = await this.electronService.ipcRenderer.invoke('show-confirm-dialog', {
+      type: 'warning',
+      buttons: ['At Next Start', 'Restart Now'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Give Space Back to the Disk',
+      message: `Restart now to give ${this.formatBytes(freeBytes)} back to the disk?`,
+      detail:
+        'The tool rewrites this computer\'s database when it starts, before any instrument can connect. ' +
+        'Restarting interrupts every current instrument connection. Wait until no analyzer is sending. ' +
+        (autoConnect
+          ? 'Instruments reconnect when the tool opens again.'
+          : 'Connect the instruments again after the tool opens.') +
+        '\n\nWith At Next Start, the rewrite happens the next time the tool starts.'
+    });
+    const restartNow = choice?.response === 1;
+    await this.electronService.rewriteSqliteAtStart(restartNow);
+    return restartNow
+      ? 'Restarting to give the space back to the disk…'
+      : `${this.formatBytes(freeBytes)} goes back to the disk the next time the tool starts.`;
   }
 
   /** Progress of the compaction the tool runs by itself after an upgrade. */

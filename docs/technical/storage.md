@@ -74,8 +74,11 @@ transmission. It links a row only when every record of the row's `raw_text`
 appears whole and in order in the transmission. `recordsOf` sets aside
 framing, frame numbers and checksums for this comparison. It replaces
 `raw_text` only when exactly one parsed run matches the row. Otherwise it
-leaves `raw_text` whole. It then runs `VACUUM` on SQLite or
-`OPTIMIZE TABLE orders` on MySQL.
+leaves `raw_text` whole. It then runs `OPTIMIZE TABLE orders` on MySQL. SQLite
+is never rewritten while the tool runs. Settings measures the free pages
+(`PRAGMA freelist_count` × `page_size`) and offers **Restart Now** or
+**At Next Start**. Either sets `storageReclaimPending`, and the main process
+runs `VACUUM` at the next start.
 
 The tool also compacts by itself (`scheduleAutomaticCompaction`), two minutes
 after it starts, once per database. It skips a database with no unlinked
