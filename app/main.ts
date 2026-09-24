@@ -900,19 +900,70 @@ try {
   // rewrite it, as results may be arriving. It asks for the rewrite here
   // instead, at the next start, before the window exists and so before any
   // instrument can connect.
-  async function reclaimSpaceIfRequested(db: sqlite3.Database): Promise<void> {
+  /**
+   * Returns the notice shown while it worked, still open: closing the only
+   * window would quit the application, so it is closed once the main window
+   * exists.
+   */
+  async function reclaimSpaceIfRequested(db: sqlite3.Database): Promise<BrowserWindow | null> {
     const pending = store.get(STORAGE_RECLAIM_PENDING_KEY);
     if (!pending?.sqlite) {
-      return;
+      return null;
     }
     // Asked once: a failed rewrite is logged, not retried at every start.
     store.delete(STORAGE_RECLAIM_PENDING_KEY);
+    const notice = await showStartupNotice(
+      'Tidying up the database',
+      'Giving back the space freed by storage compaction. This takes a few seconds, and the Interface Tool opens when it is done.'
+    );
     const started = Date.now();
     try {
       await vacuumSqlite(db);
       log.info(`Gave the space freed by storage compaction back to the disk in ${Math.round((Date.now() - started) / 1000)} s`);
     } catch (error) {
       log.error(`Could not give the space freed by storage compaction back to the disk: ${formatUnknownError(error)}`);
+    }
+    return notice;
+  }
+
+  /**
+   * A small window with a moving bar, for work done at start before the main
+   * window exists. Its page is a fixed string with no Node and no input in
+   * it. Resolves once it is on screen, or with null if it could not be shown:
+   * the work goes ahead either way.
+   */
+  async function showStartupNotice(title: string, detail: string): Promise<BrowserWindow | null> {
+    const page = `<!doctype html><html><head><meta charset="utf-8">
+      <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+      <style>
+        body { margin: 0; padding: 22px 26px; font: 14px -apple-system, "Segoe UI", Roboto, sans-serif; color: #1f2937; background: #fff; }
+        h1 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+        p { margin: 0 0 16px; color: #4b5563; line-height: 1.4; }
+        .track { position: relative; height: 6px; overflow: hidden; border-radius: 3px; background: #e5e7eb; }
+        .bar { position: absolute; width: 35%; height: 100%; border-radius: 3px; background: #1976d2; animation: slide 1.2s ease-in-out infinite; }
+        @keyframes slide { from { left: -35%; } to { left: 100%; } }
+      </style></head>
+      <body><h1>${title}</h1><p>${detail}</p><div class="track"><div class="bar"></div></div></body></html>`;
+    try {
+      const notice = new BrowserWindow({
+        width: 440,
+        height: 150,
+        frame: false,
+        resizable: false,
+        minimizable: false,
+        maximizable: false,
+        center: true,
+        show: false,
+        title,
+        webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, javascript: false }
+      });
+      const shown = new Promise<void>(resolve => notice.once('ready-to-show', () => { notice.show(); resolve(); }));
+      await notice.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(page)}`);
+      await Promise.race([shown, new Promise(resolve => setTimeout(resolve, 2000))]);
+      return notice;
+    } catch (error) {
+      log.warn(`Could not show the start-up notice: ${formatUnknownError(error)}`);
+      return null;
     }
   }
 
@@ -941,13 +992,16 @@ try {
       await copySqliteMigrationFiles();
       await copyMySQLMigrationFiles();
       await runSqliteMigrations(sqlite3Obj, migrationsPath, forceMigrationReplay);
-      await reclaimSpaceIfRequested(sqlite3Obj);
+      const startupNotice = await reclaimSpaceIfRequested(sqlite3Obj);
 
       // IMPORTANT: Register all IPC handlers BEFORE creating the window
       registerIpcHandlers();
 
       // Now that the database and IPC are ready, create the main window
       createWindow();
+      if (startupNotice && !startupNotice.isDestroyed()) {
+        startupNotice.destroy();
+      }
 
       // Log app startup to both console and file
       const startupTime = new Date().toISOString();

@@ -1827,18 +1827,24 @@ export class DatabaseService {
    * raw text changed since it was read.
    * @param previousLength LENGTH(raw_text) as this database reported it
    * when the row was read (characters in SQLite, bytes in MySQL)
+   * @param settled when given, the row must still be settled as it was when
+   * read: a result requeued for sending meanwhile is left alone
    */
   public async linkResultToTransmission(
     store: RawDataStore,
     id: number,
     transmissionId: string,
     rawText: string,
-    previousLength: number
+    previousLength: number,
+    settled: SettledResults | null = null
   ): Promise<boolean> {
+    const settledClause = settled
+      ? ` AND lims_sync_status <> 0${settled.webhookDelivered ? ' AND result_webhook_status <> 0' : ''}`
+      : '';
     const result = await this.runOn(
       store,
       `UPDATE orders SET transmission_id = ?, raw_text = ?
-       WHERE id = ? AND transmission_id IS NULL AND LENGTH(raw_text) = ?`,
+       WHERE id = ? AND transmission_id IS NULL AND LENGTH(raw_text) = ?${settledClause}`,
       [transmissionId, rawText, id, previousLength]
     );
     return Number(result?.changes ?? result?.affectedRows ?? 0) > 0;

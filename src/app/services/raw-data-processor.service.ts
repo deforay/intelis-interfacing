@@ -197,11 +197,12 @@ export class RawDataProcessorService {
         const report = await this.runCompaction(
           store, progress => this.backgroundCompaction.next(progress), () => this.backgroundStopRequested, this.settledResults(store)
         );
+        // Counted before anything else: a stopped run freed space too.
+        if (store === 'sqlite') {
+          this.recordFreedSpace(report.charactersRemoved);
+        }
         if (report.cancelled) {
           return false;
-        }
-        if (store === 'sqlite' && report.charactersRemoved >= RawDataProcessorService.RECLAIM_MIN_CHARACTERS) {
-          this.electronStoreService.set(RawDataProcessorService.RECLAIM_PENDING_KEY, { sqlite: new Date().toISOString() });
         }
         this.utilsService.logger('info',
           `Storage compacted (${store === 'mysql' ? 'MySQL' : 'this computer'}): ${report.linkedResults} results linked, ` +
@@ -228,6 +229,23 @@ export class RawDataProcessorService {
       storedBefore: formatInTimeZone(cutoff, this.electronStoreService.get('commonConfig')?.timeZone),
       webhookDelivered: store === 'sqlite' && !!this.electronStoreService.get('resultWebhook')
     };
+  }
+
+  /**
+   * Adds up what background runs freed in SQLite, and asks the main process
+   * for a rewrite at the next start once it is worth one.
+   */
+  private recordFreedSpace(characters: number): void {
+    if (characters <= 0) {
+      return;
+    }
+    const pending = this.electronStoreService.get(RawDataProcessorService.RECLAIM_PENDING_KEY) ?? {};
+    const freed = Number(pending.freedCharacters ?? 0) + characters;
+    this.electronStoreService.set(RawDataProcessorService.RECLAIM_PENDING_KEY, {
+      ...pending,
+      freedCharacters: freed,
+      ...(freed >= RawDataProcessorService.RECLAIM_MIN_CHARACTERS ? { sqlite: new Date().toISOString() } : {})
+    });
   }
 
   private isCompacted(store: RawDataStore): boolean {
@@ -662,7 +680,7 @@ export class RawDataProcessorService {
         }
         const ownRecords = RawDataProcessorService.ownRecords(parsed, row);
         const rawText = ownRecords && ownRecords.length < rowText.length ? ownRecords : rowText;
-        if (await dbService.linkResultToTransmission(store, row.id, transmissionId, rawText, Number(row.raw_text_length))) {
+        if (await dbService.linkResultToTransmission(store, row.id, transmissionId, rawText, Number(row.raw_text_length), settled)) {
           report.linkedResults++;
           if (rawText !== rowText) {
             report.trimmedResults++;
