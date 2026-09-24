@@ -297,7 +297,8 @@ export class RawDataComponent implements OnInit, OnDestroy {
       });
     } else {
       this.utilitiesService.logger('success',
-        `Reprocessed ${status.processedCount} transmissions in ${processingTime}: ${status.saved} new results, ${status.unchanged} already stored`,
+        `Reprocessed ${status.processedCount} transmissions in ${processingTime}: ${status.saved} new results, ` +
+        `${status.unchanged} already stored, ${status.empty} transmissions with no results`,
         null);
     }
   }
