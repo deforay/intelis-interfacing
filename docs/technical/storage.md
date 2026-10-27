@@ -30,8 +30,9 @@ The same shape in SQLite and, when configured, MySQL.
 | `results_as_sent` | The result as read from the transmission, before result rules. `Failed` or `Incomplete` when the analyzer marked the run so, with its own text in `notes`. `NULL` on results stored before 4.5.0. |
 | `tested_by` | Operator recorded by the analyzer |
 | `analysed_date_time`, `specimen_date_time`, `authorised_date_time` | As reported |
-| `result_status` | `1` final, `0` not |
-| `lims_sync_status` | `0` pending, `1` synced, `2` failed |
+| `result_status` | `1` final, `0` not. Every HL7 result is stored as `1`. |
+| `result_status_as_sent` | The status letter the analyzer sent: ASTM O.26 or HL7 OBX.11, such as `F`, `C`, `P`, `X` or `I`. Results stored before 4.8.4 are filled in after start from their `raw_text`, in SQLite only, when the letter is certain. Otherwise `NULL`. |
+| `lims_sync_status` | `0` pending, `1` synced, `2` the LIS did not take it. The console shows `2` as `Could not sync`. |
 | `result_webhook_status` | Result forwarding only: `0` pending, `1` delivered, `2` not queued. Local to SQLite. See [result webhook](result-webhook.md). |
 | `raw_text` | The result's own records. For ASTM: the message header, the patient record the order follows, and the order with the records after it. For HL7: the message header and the specimen's segments, or the whole message when it cannot be split by specimen. Before 4.8.0: the whole message or read buffer. |
 | `transmission_id` | The `raw_data.transmission_id` of the transmission the row was read from. `NULL` on rows stored before 4.8.0 until **Compact Storage** links them. |

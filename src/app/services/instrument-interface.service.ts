@@ -11,6 +11,7 @@ import { applyResultRules, effectiveResultRules, ResultRule } from '../../../sha
 import { BehaviorSubject, Observable, Subject, Subscription } from 'rxjs';
 import { COMMUNICATION_PROTOCOL, LIMS_SYNC_STATUS } from '../constants/domain.constants';
 import { v4 as uuidv4 } from 'uuid';
+import { statusAsSent } from '../../../shared/result-status';
 
 /** Counts of what saving the results of a reprocessed transmission did. */
 export interface ResultSaveStats {
@@ -321,6 +322,9 @@ export class InstrumentInterfaceService {
     sampleResult.tested_by = this.hl7Helper.extractHL7TesterInfo(singleObx, specimen.obx, specimen.message);
 
     sampleResult.result_status = 1;
+    // WHY: result_status says final on every HL7 result. The letter the
+    // analyzer sent is what says whether it was final.
+    sampleResult.result_status_as_sent = statusAsSent(singleObx.get('OBX.11')?.toString());
     sampleResult.lims_sync_status = LIMS_SYNC_STATUS.PENDING;
 
     const dateTimeFields = this.hl7Helper.extractHL7DateTimeFields(singleObx);

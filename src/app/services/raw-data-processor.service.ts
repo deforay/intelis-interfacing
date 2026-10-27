@@ -7,6 +7,7 @@ import { InstrumentConnectionStack } from '../interfaces/instrument-connections.
 import { RawDataFilter, RawDataStore } from '../interfaces/raw-machine-data.interface';
 import { effectiveResultRules } from '../../../shared/result-rules';
 import { formatInTimeZone } from '../../../shared/time-zone';
+import { statusFromRawText } from '../../../shared/result-status';
 import type { SettledResults } from './database.service';
 
 type ReprocessOutcome = 'stored' | 'empty' | 'failed';
@@ -83,6 +84,9 @@ export class RawDataProcessorService {
   private static readonly RECLAIM_MIN_CHARACTERS = 10_000_000;
   // The background compaction leaves results this recent alone.
   private static readonly SETTLED_AFTER_DAYS = 7;
+  // Set once every result captured before 4.8.4 has been read for its status.
+  private static readonly RESULT_STATUS_FILLED_KEY = 'resultStatusFilled';
+  private static readonly RESULT_STATUS_BATCH_SIZE = 500;
 
   private readonly reprocessingStatus = new BehaviorSubject<ReprocessingStatus>(RawDataProcessorService.idleStatus());
   private cancelRequested = false;
@@ -143,7 +147,7 @@ export class RawDataProcessorService {
         return;
       }
       this.backgroundStopRequested = false;
-      this.backgroundRun = this.compactAutomatically().finally(() => {
+      this.backgroundRun = this.compactAutomatically().then(() => this.fillResultStatusAutomatically()).finally(() => {
         this.backgroundRun = null;
         this.backgroundCompaction.next(null);
       });
@@ -183,6 +187,48 @@ export class RawDataProcessorService {
       if (this.backgroundStopRequested || !(await this.compactStoreAutomatically(store))) {
         return;
       }
+    }
+  }
+
+  /**
+   * Fills in the analyzer status of results captured before 4.8.4 kept it,
+   * from each result's own records. A result whose status is not certain
+   * stays empty. Runs in this computer's database only, which the console
+   * reads. Once it reaches the end it is recorded and not run again.
+   */
+  private async fillResultStatusAutomatically(): Promise<void> {
+    if (this.backgroundStopRequested || this.reprocessingStatus.value.inProgress
+      || this.electronStoreService.get(RawDataProcessorService.RESULT_STATUS_FILLED_KEY)) {
+      return;
+    }
+    const db = this.instrumentInterfaceService.dbService;
+    let afterId = 0;
+    let filled = 0;
+    try {
+      for (;;) {
+        if (this.backgroundStopRequested) {
+          return;
+        }
+        const rows = await db.resultsWithoutStatus(afterId, RawDataProcessorService.RESULT_STATUS_BATCH_SIZE);
+        if (rows.length === 0) {
+          break;
+        }
+        for (const row of rows) {
+          afterId = row.id;
+          const letter = statusFromRawText(row.raw_text, row.order_id);
+          if (letter) {
+            await db.setResultStatusAsSent(row.id, letter);
+            filled++;
+          }
+        }
+      }
+      this.electronStoreService.set(RawDataProcessorService.RESULT_STATUS_FILLED_KEY, new Date().toISOString());
+      if (filled > 0) {
+        this.utilsService.logger('info', `Analyzer status filled in on ${filled} earlier results.`, null);
+      }
+    } catch (error) {
+      // It is tried again at the next start. What it filled in stays.
+      this.utilsService.logger('error', `Filling in the analyzer status stopped: ${error instanceof Error ? error.message : error}`, null);
     }
   }
 
