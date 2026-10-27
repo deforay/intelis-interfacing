@@ -176,6 +176,7 @@ export class DatabaseService {
     'test_location',
     'created_at',
     'result_status',
+    'result_status_as_sent',
     'lims_sync_status',
     'lims_sync_date_time',
     'repeated',
@@ -616,6 +617,7 @@ export class DatabaseService {
     await this.ensureMysqlColumn('orders', 'results_as_sent', 'ALTER TABLE `orders` ADD COLUMN `results_as_sent` VARCHAR(255) NULL AFTER `results`');
     await this.ensureMysqlColumn('orders', 'ingestion_id', 'ALTER TABLE `orders` ADD COLUMN `ingestion_id` VARCHAR(36) NULL');
     await this.ensureMysqlIndex('orders', 'idx_orders_ingestion_id', 'CREATE UNIQUE INDEX `idx_orders_ingestion_id` ON `orders` (`ingestion_id`)');
+    await this.ensureMysqlColumn('orders', 'result_status_as_sent', 'ALTER TABLE `orders` ADD COLUMN `result_status_as_sent` VARCHAR(10) NULL');
     await this.ensureMysqlColumn('orders', 'transmission_id', 'ALTER TABLE `orders` ADD COLUMN `transmission_id` VARCHAR(36) NULL');
     await this.ensureMysqlColumn('raw_data', 'transmission_id', 'ALTER TABLE `raw_data` ADD COLUMN `transmission_id` VARCHAR(36) NULL');
     await this.ensureMysqlColumn('raw_data', 'sha256', 'ALTER TABLE `raw_data` ADD COLUMN `sha256` CHAR(64) NULL');
@@ -1983,6 +1985,21 @@ export class DatabaseService {
       transmissionBytes: Number(raw?.bytes ?? 0),
       fileBytes: null
     };
+  }
+
+  /** Results in SQLite with no analyzer status, in id order after `afterId`. */
+  public resultsWithoutStatus(afterId: number, limit: number): Promise<Array<{ id: number; order_id: string; raw_text: string }>> {
+    return this.execSqlite(
+      `SELECT id, order_id, raw_text FROM orders
+       WHERE result_status_as_sent IS NULL AND raw_text IS NOT NULL AND id > ?
+       ORDER BY id LIMIT ?`,
+      [afterId, limit]
+    );
+  }
+
+  /** Stores the analyzer status of a result in SQLite, unless it has one already. */
+  public async setResultStatusAsSent(id: number, letter: string): Promise<void> {
+    await this.execSqlite('UPDATE orders SET result_status_as_sent = ? WHERE id = ? AND result_status_as_sent IS NULL', [letter, id]);
   }
 
   /** Results that still carry a copy of their transmission and no link to it. */

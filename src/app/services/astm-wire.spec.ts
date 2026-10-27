@@ -170,7 +170,7 @@ describe('ASTM over the wire (with checksum)', () => {
 
       wire.receive(astmSession(astmFrames(records)));
 
-      expect(wire.saved()[0]).toMatchObject({ order_id: 'SAMPLE-PRELIM', result_status: 0 });
+      expect(wire.saved()[0]).toMatchObject({ order_id: 'SAMPLE-PRELIM', result_status: 0, result_status_as_sent: 'P' });
     });
 
     it('stores back-to-back sessions from the same instrument separately', () => {

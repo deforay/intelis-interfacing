@@ -34,6 +34,7 @@ describe('HL7 over the wire', () => {
         authorised_date_time: RUN_DATE_FORMATTED,
         result_accepted_date_time: RUN_DATE_FORMATTED,
         result_status: 1,
+        result_status_as_sent: 'F',
         lims_sync_status: 0,
         test_location: 'LAB001',
         machine_used: 'ANALYZER-1',

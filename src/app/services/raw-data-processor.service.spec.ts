@@ -125,3 +125,37 @@ describe('RawDataProcessorService', () => {
     expect(result).toMatchObject({ success: 0, failed: 1 });
   });
 });
+
+describe('filling in the analyzer status of earlier results', () => {
+  const createService = (rows: any[], filled?: string) => {
+    const utilities = { logger: vi.fn() };
+    const saved: Record<string, unknown> = filled ? { resultStatusFilled: filled } : {};
+    const store = { get: vi.fn((key: string) => saved[key]), set: vi.fn((key: string, value: unknown) => { saved[key] = value; }) };
+    const dbService = {
+      resultsWithoutStatus: vi.fn(async (afterId: number) => rows.filter(row => row.id > afterId).slice(0, 500)),
+      setResultStatusAsSent: vi.fn(async () => undefined)
+    };
+    const service = new RawDataProcessorService(utilities as any, store as any, { dbService } as any) as any;
+    return { service, dbService, store };
+  };
+
+  it('stores the letter only where the records give one, then records that it finished', async () => {
+    const { service, dbService, store } = createService([
+      { id: 1, order_id: 'S1', raw_text: 'MSH|^~\\&|GX\rOBX|1|ST|HIV|1|1250|cp|||||F' },
+      { id: 2, order_id: 'S2', raw_text: 'MSH|^~\\&|GX\rOBX|1|ST|HIV|1|1250|cp|||||F\rOBX|2|ST|HIV|1|9|cp|||||P' }
+    ]);
+
+    await service.fillResultStatusAutomatically();
+
+    expect(dbService.setResultStatusAsSent.mock.calls).toEqual([[1, 'F']]);
+    expect(store.set).toHaveBeenCalledWith('resultStatusFilled', expect.any(String));
+  });
+
+  it('does not walk the results again once it has finished', async () => {
+    const { service, dbService } = createService([], '2026-10-27T00:00:00.000Z');
+
+    await service.fillResultStatusAutomatically();
+
+    expect(dbService.resultsWithoutStatus).not.toHaveBeenCalled();
+  });
+});
