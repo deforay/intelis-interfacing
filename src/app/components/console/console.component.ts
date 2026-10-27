@@ -19,7 +19,8 @@ import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { debounceTime, distinctUntilChanged, map } from 'rxjs/operators';
 import { LogDisplayService, LogEntry } from '../../services/log-display.service';
-import { BACKGROUND_INTERVAL_MS } from '../../constants/domain.constants';
+import { BACKGROUND_INTERVAL_MS, LIMS_SYNC_STATUS } from '../../constants/domain.constants';
+import { resultStatusDisplay, ResultStatusDisplay } from '../../../../shared/result-status';
 import { TransmissionDialogComponent } from '../transmission-dialog/transmission-dialog.component';
 
 export enum SelectType {
@@ -115,13 +116,10 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
     'order_id',
     'results',
     'notes',
-    'test_unit',
-    'test_type',
-    'tested_by',
     'analysed_date_time',
     'added_on',
+    'result_status_as_sent',
     'lims_sync_status',
-    'lims_sync_date_time',
     'original'
   ];
   /**
@@ -129,6 +127,34 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
    * so an empty column does not push the sync status off the screen.
    */
   public visibleColumns: string[] = this.displayedColumns.filter(column => column !== 'notes');
+
+  /** The Result Status column: what the analyzer said about the result. */
+  resultStatus(row: any): ResultStatusDisplay {
+    return resultStatusDisplay(row);
+  }
+
+  /**
+   * The Synced to LIS column: what the LIS did with a captured result. The words
+   * avoid "failed" and "rejected". In a laboratory those describe a test or a
+   * sample, and this column is about neither.
+   */
+  limsStatus(row: any, answeredOn: string): { label: string; title: string; icon: string; state: 'received' | 'waiting' | 'could-not-sync' } {
+    const on = answeredOn ? ` on ${answeredOn}` : '';
+    switch (Number(row?.lims_sync_status)) {
+      case LIMS_SYNC_STATUS.SYNCED:
+        return { label: 'Yes', title: `The LIS received this result${on}.`, icon: 'fa-check', state: 'received' };
+      case LIMS_SYNC_STATUS.PENDING:
+        return { label: 'Not yet', title: 'The LIS has not taken this result yet.', icon: 'fa-clock', state: 'waiting' };
+      default:
+        return {
+          label: 'Could not sync',
+          title: `This result could not sync to the LIS${on}. The test result is unchanged. To send it again, select the row and press Re-sync Selected.`,
+          icon: 'fa-exclamation-triangle',
+          state: 'could-not-sync'
+        };
+    }
+  }
+
   private visibleColumnsSubscription: Subscription | null = null;
   selectType = [
     { text: "Single", value: SelectType.single },

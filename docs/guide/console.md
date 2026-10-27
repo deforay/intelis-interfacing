@@ -43,16 +43,13 @@ first:
 
 | Column | What it is |
 |--------|------------|
-| **Instrument** | Which analyzer sent it |
+| **Instrument** | Which analyzer sent it. The test type is below it. |
 | **Sample ID** | The sample identifier, as the analyzer sent it |
-| **Result** | The result as stored: as the analyzer sent it, unless a [result rule](settings.md#result-rules) replaced it |
-| **Unit** | The unit, as the analyzer sent it |
-| **Test Type** | The assay |
-| **Tested By** | The operator recorded by the analyzer |
-| **Tested On** | When the analyzer ran the test |
+| **Result** | The result as stored, followed by its unit. The result is as the analyzer sent it, unless a [result rule](settings.md#result-rules) replaced it. |
+| **Tested On** | When the analyzer ran the test. The operator the analyzer recorded is below it. |
 | **Received On** | When this tool received it |
-| **Sync Status** | `Pending`, `Synced` or `Failed` |
-| **Sync Time** | When the result was synced to the LIS |
+| **Result Status** | What the analyzer said about the result: `Final`, `Corrected`, `Preliminary`, `Incomplete`, `Cannot be done` or `Failed`. A dash means the analyzer status is not known for a result captured before 4.8.4. |
+| **Synced to LIS** | `Yes` when the LIS has the result. `Not yet` while the result waits. `Could not sync` when the LIS did not take it. Hover over the value to see when the LIS answered. None of these values describes the test. |
 
 You can search by instrument, sample ID or test type, select results and press
 **Re-sync Selected** to send them to the LIS again, and press **Refresh** to

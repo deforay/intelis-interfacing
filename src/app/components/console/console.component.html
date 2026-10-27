@@ -352,7 +352,12 @@
             Instrument
           </mat-header-cell>
           <mat-cell *matCellDef="let row">
-            <span class="instrument-badge">{{ row.machine_used }}</span>
+            <div class="instrument-cell">
+              <span class="instrument-badge" [title]="row.machine_used">{{ row.machine_used }}</span>
+              @if (row.test_type) {
+                <span class="test-type" [title]="row.test_type">{{ row.test_type }}</span>
+              }
+            </div>
           </mat-cell>
         </ng-container>
 
@@ -368,7 +373,7 @@
         <ng-container matColumnDef="results">
           <mat-header-cell *matHeaderCellDef mat-sort-header>Result</mat-header-cell>
           <mat-cell *matCellDef="let row">
-            <span class="result-value">{{ row.results }}</span>
+            <span class="result-value">{{ row.results }}@if (row.test_unit) {<span class="result-unit"> {{ row.test_unit }}</span>}</span>
           </mat-cell>
         </ng-container>
 
@@ -380,33 +385,17 @@
           </mat-cell>
         </ng-container>
 
-        <!-- Result Unit Column -->
-        <ng-container matColumnDef="test_unit">
-          <mat-header-cell *matHeaderCellDef mat-sort-header>Unit</mat-header-cell>
-          <mat-cell *matCellDef="let row">
-            <span [title]="row.test_unit" class="result-unit truncate-with-tooltip">{{ row.test_unit }}</span>
-          </mat-cell>
-        </ng-container>
-
-        <!-- Test Type Column -->
-        <ng-container matColumnDef="test_type">
-          <mat-header-cell *matHeaderCellDef mat-sort-header>Test Type</mat-header-cell>
-          <mat-cell *matCellDef="let row">{{ row.test_type }}</mat-cell>
-        </ng-container>
-
-        <!-- Tested By Column -->
-        <ng-container matColumnDef="tested_by">
-          <mat-header-cell *matHeaderCellDef mat-sort-header>Tested By</mat-header-cell>
-          <mat-cell *matCellDef="let row">
-            <span [title]="row.tested_by" class="truncate-with-tooltip">{{ row.tested_by }}</span>
-          </mat-cell>
-        </ng-container>
-
         <!-- Tested On Column -->
         <ng-container matColumnDef="analysed_date_time">
           <mat-header-cell *matHeaderCellDef mat-sort-header>Tested On</mat-header-cell>
           <mat-cell *matCellDef="let row">
-            <span class="date-time" [title]="row.analysed_date_time">{{ row.analysed_date_time | displayDateTime }}</span>
+            <!-- The operator who ran the test sits under when it ran. -->
+            <div class="tested-cell">
+              <span class="date-time" [title]="row.analysed_date_time">{{ row.analysed_date_time | displayDateTime }}</span>
+              @if (row.tested_by) {
+                <span class="tested-by" [title]="row.tested_by">by {{ row.tested_by }}</span>
+              }
+            </div>
           </mat-cell>
         </ng-container>
 
@@ -418,31 +407,26 @@
           </mat-cell>
         </ng-container>
 
-        <!-- LIS Sync Status Column -->
-        <ng-container matColumnDef="lims_sync_status">
-          <mat-header-cell *matHeaderCellDef mat-sort-header>Sync Status</mat-header-cell>
+        <!-- Result Status Column -->
+        <!-- WHY: operators read the old red "Failed" sync badge as a failed test.
+             What the analyzer said and what the LIS did are two questions, so
+             each has a column. -->
+        <ng-container matColumnDef="result_status_as_sent">
+          <mat-header-cell *matHeaderCellDef mat-sort-header>Result Status</mat-header-cell>
           <mat-cell *matCellDef="let row">
-            <span class="sync-badge" [ngClass]="{
-              'synced': row.lims_sync_status == 1 || row.lims_sync_status === '1',
-              'not-synced': row.lims_sync_status == 0 || row.lims_sync_status === '0',
-              'failed': row.lims_sync_status == 2 || row.lims_sync_status === '2'
-            }">
-              <i class="fa" [ngClass]="{
-                'fa-check-circle': row.lims_sync_status == 1 || row.lims_sync_status === '1',
-                'fa-clock': row.lims_sync_status == 0 || row.lims_sync_status === '0',
-                'fa-exclamation-circle': row.lims_sync_status == 2 || row.lims_sync_status === '2'
-              }"></i>
-              {{ (row.lims_sync_status == 1 || row.lims_sync_status === '1') ? 'Synced' :
-              (row.lims_sync_status == 0 || row.lims_sync_status === '0') ? 'Pending' : 'Failed' }}
-            </span>
+            @let status = resultStatus(row);
+            <span class="result-status" [ngClass]="status.tone" [title]="status.title">{{ status.label }}</span>
           </mat-cell>
         </ng-container>
 
-        <!-- LIS Sync Datetime Column -->
-        <ng-container matColumnDef="lims_sync_date_time">
-          <mat-header-cell *matHeaderCellDef mat-sort-header>Sync Time</mat-header-cell>
+        <!-- Synced to LIS Column -->
+        <ng-container matColumnDef="lims_sync_status">
+          <mat-header-cell *matHeaderCellDef mat-sort-header>Synced to LIS</mat-header-cell>
           <mat-cell *matCellDef="let row">
-            <span class="date-time" [title]="row.lims_sync_date_time || ''">{{ (row.lims_sync_date_time | displayDateTime) || '-' }}</span>
+            @let lis = limsStatus(row, row.lims_sync_date_time | displayDateTime);
+            <span class="lis-state" [ngClass]="lis.state" [title]="lis.title">
+              <i class="fa" [ngClass]="lis.icon"></i> {{ lis.label }}
+            </span>
           </mat-cell>
         </ng-container>
 

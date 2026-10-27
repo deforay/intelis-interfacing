@@ -1015,8 +1015,8 @@ $background-color: #f9fafb;
     // column, the sync status included, fits a common laptop screen. The
     // minimums keep dates and IDs readable; below them the table scrolls.
     .mat-column-machine_used {
-      flex: 0 0 90px;
-      max-width: 90px;
+      flex: 0 0 170px;
+      max-width: 170px;
     }
 
     .mat-column-order_id {
@@ -1037,43 +1037,46 @@ $background-color: #f9fafb;
       white-space: nowrap;
     }
 
-    .mat-column-test_unit {
-      flex: 0 1 80px;
-      min-width: 50px;
-      text-align: center;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .mat-column-test_type {
-      flex: 1 1 110px;
-      min-width: 90px;
-    }
-
-    .mat-column-tested_by {
-      flex: 1 1 110px;
-      min-width: 85px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
 
     // A date is never cut short: the full timestamp is what an operator
     // matches against the analyzer's printout.
     .mat-column-analysed_date_time,
-    .mat-column-added_on,
-    .mat-column-lims_sync_date_time {
+    .mat-column-added_on {
       flex: 0 0 150px;
       min-width: 150px;
       padding-left: 0.5rem;
       padding-right: 0.5rem;
     }
 
+    .mat-column-result_status_as_sent {
+      flex: 0 0 125px;
+      max-width: 125px;
+      white-space: nowrap;
+    }
+
     .mat-column-lims_sync_status {
-      flex: 0 0 100px;
-      max-width: 100px;
-      text-align: center;
+      flex: 0 0 125px;
+      max-width: 125px;
+      white-space: nowrap;
+    }
+
+    // The test type sits under the instrument that ran it.
+    .instrument-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.125rem;
+      min-width: 0;
+      max-width: 100%;
+    }
+
+    .test-type {
+      font-size: 0.6875rem;
+      color: $text-light;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
     }
 
     .instrument-badge {
@@ -1097,8 +1100,10 @@ $background-color: #f9fafb;
       overflow-wrap: anywhere;
     }
 
+    // The unit follows the value, smaller, so "1250 copies/mL" reads as one.
     .result-unit {
-      font-size: 0.6rem;
+      font-size: 0.6875rem;
+      color: $text-light;
     }
 
     // A sample ID is never cut short: a long barcode wraps instead.
@@ -1115,33 +1120,73 @@ $background-color: #f9fafb;
       text-overflow: ellipsis;
     }
 
-    .sync-badge {
+    .tested-cell {
+      display: flex;
+      flex-direction: column;
+      gap: 0.125rem;
+      min-width: 0;
+    }
+
+    .tested-by {
+      font-size: 0.6875rem;
+      color: $text-light;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    // What the analyzer said: green for final, amber for not yet final, red
+    // for a failed run, grey when the status is not known.
+    .result-status {
       display: inline-flex;
       align-items: center;
-      gap: 0.125rem; // Reduced from 0.25rem
-      padding: 0.125rem 0.375rem; // Reduced from 0.25rem 0.5rem
+      padding: 0.125rem 0.5rem;
       border-radius: 1rem;
-      font-size: 0.625rem; // Reduced from 0.7rem
-      font-weight: 500;
+      font-size: 0.6875rem;
+      font-weight: 600;
       white-space: nowrap;
+      cursor: help;
 
-      i {
-        font-size: 0.625rem; // Reduced from 0.7rem
-      }
-
-      &.synced {
-        background: rgba($success-color, 0.1);
+      &.final {
+        background: rgba($success-color, 0.15);
         color: $success-color;
       }
 
-      &.not-synced {
-        background: rgba($warning-color, 0.1);
+      &.pending {
+        background: rgba($warning-color, 0.15);
         color: $warning-color;
       }
 
       &.failed {
-        background: rgba($danger-color, 0.1);
+        background: rgba($danger-color, 0.12);
         color: $danger-color;
+      }
+
+      &.unknown {
+        color: $text-light;
+        font-weight: 400;
+      }
+    }
+
+    // Green once sent, grey while waiting, amber when it could not sync. Red is kept
+    // for a failed test.
+    .lis-state {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.6875rem;
+      color: $text-light;
+      white-space: nowrap;
+      cursor: help;
+
+      &.received {
+        color: $success-color;
+        font-weight: 600;
+      }
+
+      &.could-not-sync {
+        color: $warning-color;
+        font-weight: 600;
       }
     }
   }
