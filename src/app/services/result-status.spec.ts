@@ -21,6 +21,13 @@ describe('the analyzer status of a result', () => {
     expect(resultStatusDisplay({ results: 'Incomplete', result_status_as_sent: 'F' })).toMatchObject({ label: 'Incomplete', tone: 'pending' });
   });
 
+  it('knows a failed run in French, with or without accents', () => {
+    expect(resultStatusDisplay({ results: 'ERREUR', result_status_as_sent: 'F' })).toMatchObject({ label: 'Failed', tone: 'failed' });
+    expect(resultStatusDisplay({ results: 'PAS DE RÉSULTAT', result_status_as_sent: 'F' })).toMatchObject({ label: 'Failed', tone: 'failed' });
+    expect(resultStatusDisplay({ results: 'PAS DE RESULTAT', result_status_as_sent: 'F' })).toMatchObject({ label: 'Failed', tone: 'failed' });
+    expect(resultStatusDisplay({ results: 'NON DÉTECTÉ', result_status_as_sent: 'F' })).toMatchObject({ label: 'Final', tone: 'final' });
+  });
+
   it('shows a letter that differs between ASTM and HL7 as sent', () => {
     expect(resultStatusDisplay({ results: '1250', result_status_as_sent: 'R' })).toMatchObject({ label: 'Status R', tone: 'unknown' });
   });

@@ -1848,7 +1848,8 @@ export class DatabaseService {
       AND COALESCE(specimen_date_time, '') = COALESCE(?, '')
       AND COALESCE(authorised_date_time, '') = COALESCE(?, '')
       AND COALESCE(result_accepted_date_time, '') = COALESCE(?, '')
-      AND result_status = ?`;
+      AND result_status = ?
+      AND (COALESCE(result_status_as_sent, '') = COALESCE(?, '') OR result_status_as_sent IS NULL)`;
 
   /** True when a result exactly like this one is already stored. */
   public async findIdenticalResult(record: any): Promise<boolean> {
@@ -1856,7 +1857,8 @@ export class DatabaseService {
       record.order_id, record.instrument_id ?? record.machine_used ?? null, record.test_id ?? null, record.test_type ?? null,
       record.results ?? null, record.results_as_sent ?? null, record.test_unit ?? null, record.notes ?? null,
       record.tested_by ?? null, record.analysed_date_time ?? null, record.specimen_date_time ?? null,
-      record.authorised_date_time ?? null, record.result_accepted_date_time ?? null, Number(record.result_status ?? 0)
+      record.authorised_date_time ?? null, record.result_accepted_date_time ?? null, Number(record.result_status ?? 0),
+      record.result_status_as_sent ?? null
     ];
     return this.foundInEitherStore(DatabaseService.IDENTICAL_RESULT_SQL, params, record.order_id);
   }

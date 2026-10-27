@@ -270,6 +270,19 @@ describe('reprocessing', () => {
     expect(s.rows('SELECT id FROM orders')).toHaveLength(before);
   });
 
+  it('stores a final result over one stored as preliminary, though result_status is the same', async () => {
+    const s = setup('hl7', 'roche-cobas-4800');
+    await s.receive(mllp(COBAS_4800_MESSAGE));
+    s.database.exec("UPDATE orders SET result_status_as_sent = 'P' WHERE order_id = 'VL260004'");
+
+    const status = await s.processor.reprocessMatching('sqlite', {});
+
+    expect(status).toMatchObject({ saved: 1, unchanged: COBAS_4800_RUN.length - 1 });
+    expect(s.rows("SELECT result_status_as_sent FROM orders WHERE order_id = 'VL260004' ORDER BY id")).toEqual([
+      { result_status_as_sent: 'P' }, { result_status_as_sent: 'F' }
+    ]);
+  });
+
   it('stores a result that now reads differently as a repeat linked to the same transmission', async () => {
     const s = setup('hl7', 'roche-cobas-4800');
     await s.receive(mllp(COBAS_4800_MESSAGE));

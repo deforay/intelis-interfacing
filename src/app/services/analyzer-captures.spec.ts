@@ -6,6 +6,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { ACK, EOT, ENQ, NAK, astmFrame, createWireHarness, mllp } from '../testing/wire-harness';
+import { resultStatusDisplay } from '../../../shared/result-status';
 import {
   M2000_RESULT_TIME_FORMATTED, M2000_RUN_SAMPLES, m2000Frames, m2000Message, m2000Session
 } from '../testing/fixtures/captured/abbott-m2000';
@@ -589,6 +590,9 @@ describe('Cepheid GeneXpert 6.5 French capture (ASTM)', () => {
 
       expect(wire.sent()).not.toContain(NAK);
       expect(wire.saved().map(result => [result.order_id, result.test_type, result.results, result.test_unit, result.notes])).toEqual(expected);
+      // The French failure outcomes show as Failed in Result Status, never Final.
+      expect(wire.saved().filter(result => resultStatusDisplay(result).tone === 'failed').map(result => result.order_id))
+        .toEqual(['VL05260008', 'VL08260017']);
       expect(wire.saved()[0]).toMatchObject({
         test_id: 'Xpert H 040726163316',
         tested_by: GENEXPERT_FR_OPERATOR,
