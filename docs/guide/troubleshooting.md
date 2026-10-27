@@ -46,9 +46,11 @@ configuration screen.
 
 ## Results are not reaching the LIS
 
-- The **Sync Status** column says which stage a result is at. `Failed` results
-  can be selected and re-synced.
-- If every result is `Pending`, the LIS is not taking them: check the MySQL
+- The **Synced to LIS** column shows whether the LIS has each result. `Could
+  not sync` means the LIS did not take the result. It does not mean the test
+  failed. Select those results and press **Re-sync Selected** to send
+  them again.
+- If every result shows `Not yet`, the LIS is not taking them: check the MySQL
   settings with **Test Connection**, or the LIS API configuration.
 - **Last Results Synced to LIS** on the console tells you when it last worked,
   which usually locates the change that broke it.
