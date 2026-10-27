@@ -61,8 +61,8 @@ in `transmission_id` and `sha256` where they are missing.
 Reprocessing (`RawDataProcessorService.reprocessRawData`, `reprocessMatching`)
 reads transmissions again. It stores a result only when neither database holds
 an identical one. `DatabaseService.findIdenticalResult` compares the sample,
-instrument, test, value, value as sent, unit, notes, operator, times and
-status. The sample ID must match exactly, case included. Reprocessing checks
+instrument, test, value, value as sent, unit, notes, operator, times,
+status and status letter as sent. The sample ID must match exactly, case included. Reprocessing checks
 every result of a transmission before it stores any of them, then stores them
 one at a time. A stored result links to its transmission. Bulk runs walk
 `raw_data` by id in batches, up to the newest matching id when the run starts.

@@ -160,7 +160,8 @@ export function parseHL7Response(bytes: string): Record<string, string[]> {
 
 const IDENTICAL_FIELDS = [
   'order_id', 'instrument_id', 'test_id', 'test_type', 'results', 'results_as_sent', 'test_unit', 'notes', 'tested_by',
-  'analysed_date_time', 'specimen_date_time', 'authorised_date_time', 'result_accepted_date_time', 'result_status'
+  'analysed_date_time', 'specimen_date_time', 'authorised_date_time', 'result_accepted_date_time', 'result_status',
+  'result_status_as_sent'
 ];
 
 function ensureWindowRequire(): void {

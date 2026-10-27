@@ -30,7 +30,14 @@ const STATUS_WORDS: Readonly<Record<string, { label: string; tone: ResultStatusT
   X: { label: 'Cannot be done', tone: 'failed' },
 });
 
-const FAILED_RESULTS = new Set(['failed', 'error', 'invalid']);
+// Result values that name a run with no result, in the analyzers' own words.
+// Compared without accents or case. The value is stored as sent: this list
+// changes only what the status column shows.
+const FAILED_RESULTS = new Set(['failed', 'error', 'invalid', 'no result', 'erreur', 'pas de resultat']);
+
+function plain(value: unknown): string {
+  return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+}
 
 /**
  * The status to show for a stored result. A result stored as Failed or
@@ -40,7 +47,7 @@ const FAILED_RESULTS = new Set(['failed', 'error', 'invalid']);
 export function resultStatusDisplay(row: { results?: unknown; result_status_as_sent?: unknown }): ResultStatusDisplay {
   const letter = statusAsSent(row?.result_status_as_sent);
   const sent = letter ? ` The analyzer sent status ${letter}.` : '';
-  const result = String(row?.results ?? '').trim().toLowerCase();
+  const result = plain(row?.results);
 
   if (FAILED_RESULTS.has(result)) {
     return { label: 'Failed', title: `The analyzer reported a failed run.${sent}`, tone: 'failed' };
