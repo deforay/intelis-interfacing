@@ -147,6 +147,7 @@ INSTALLED="" APT_INSTALL_EXIT=0 APT_FIX_EXIT=0 run_install
 expect "installs and reports success" "${EXITED_ZERO}"
 expect "goes through apt in one transaction" 'grep -q "apt-get install -y" "${calls}"'
 expect "removes nothing" '! grep -q "dpkg --remove" "${calls}"'
+expect "says the databases update when the application next starts" 'grep -q "Version 4.3.0 is installed" <<< "${output}" && grep -q "next time the application starts" <<< "${output}"'
 
 echo "a machine still carrying the package the tool shipped under before"
 INSTALLED="vlsm-interfacing=4.1.15" APT_INSTALL_EXIT=0 APT_FIX_EXIT=0 run_install
@@ -166,6 +167,7 @@ INSTALLED="intelis-interfacing=4.2.1" APT_INSTALL_EXIT=100 APT_FIX_EXIT=0 run_in
 expect "does not mistake the older version for the new one" "${EXITED_NONZERO}"
 expect "tells the operator how to check the machine" 'grep -q "apt-get -f install" <<< "${output}"'
 expect "promises nothing about what was left behind" '! grep -q "has not been changed" <<< "${output}"'
+expect "says nothing about the next start" '! grep -q "next time the application starts" <<< "${output}"'
 
 echo "an install that unpacked the package but could not configure it"
 # dpkg reports the new version for a package it has only unpacked, so the
@@ -187,6 +189,7 @@ INSTALLED="vlsm-interfacing=4.1.15 intelis-interfacing=4.3.0" HALF_CONFIGURED=""
   APT_INSTALL_EXIT=100 APT_FIX_EXIT=0 run_install
 expect "reports success once the requested version is really there" "${EXITED_ZERO}"
 expect "says so plainly" 'grep -q "after dependency repair" <<< "${output}"'
+expect "says the databases update when the application next starts" 'grep -q "next time the application starts" <<< "${output}"'
 
 if [[ ${failures} -ne 0 ]]; then
   echo "install script: ${failures} case(s) failed."

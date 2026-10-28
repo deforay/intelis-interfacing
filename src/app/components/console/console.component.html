@@ -3,11 +3,36 @@
   <div #topAnchor></div>
 
   <!--
+    A newer version is already installed, and the running app is the old one
+    until it restarts. The operator chooses when. Nothing is wrong, so the
+    banner says what to do and nothing more.
+  -->
+  <div class="update-banner" *ngIf="installedUpdate && !installedUpdateDeferred">
+    <i class="fa fa-arrow-circle-up"></i>
+    <span class="update-text" *ngIf="!restartingForUpdate">
+      Version {{ installedUpdate.version }} is installed. Restart to finish the update.
+    </span>
+    <span class="update-text" *ngIf="restartingForUpdate && restartWaitingFor.length > 0">
+      Restarting when {{ restartWaitingFor.join(', ') }} {{ restartWaitingFor.length > 1 ? 'finish' : 'finishes' }} sending.
+    </span>
+    <span class="update-text" *ngIf="restartingForUpdate && restartWaitingFor.length === 0">
+      Restarting.
+    </span>
+    <button class="btn btn-sm btn-primary" (click)="restartForInstalledUpdate()" [disabled]="restartingForUpdate">
+      <i class="fa fa-redo"></i>
+      <span>Restart Now</span>
+    </button>
+    <button class="btn btn-sm btn-link update-dismiss" (click)="deferInstalledUpdate()" *ngIf="!restartingForUpdate">
+      Later
+    </button>
+  </div>
+
+  <!--
     Shown only when a newer release exists and has not been dismissed. It says
     what is available and gets out of the way; nothing is downloaded, and
     updating stays the laboratory's decision and its own moment.
   -->
-  <div class="update-banner" *ngIf="availableUpdate">
+  <div class="update-banner" *ngIf="availableUpdate && !installedUpdate">
     <i class="fa fa-arrow-circle-up"></i>
     <span class="update-text">
       Version {{ availableUpdate.version }} is available. You are running {{ appVersion }}.
@@ -475,7 +500,7 @@
     </div>
     <div class="footer-right">
       <span class="version-info" *ngIf="appVersion">
-        Version {{ appVersion }}<span *ngIf="availableUpdate"> &middot; {{ availableUpdate.version }} available</span>
+        Version {{ appVersion }}<span *ngIf="installedUpdate"> &middot; {{ installedUpdate.version }} installed, restart to finish</span><span *ngIf="availableUpdate && !installedUpdate"> &middot; {{ availableUpdate.version }} available</span>
       </span>
     </div>
   </footer>

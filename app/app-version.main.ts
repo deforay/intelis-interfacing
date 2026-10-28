@@ -24,3 +24,25 @@ export function appVersion(): string {
   }
   return cached;
 }
+
+/**
+ * The version on disk now, read fresh each time. It differs from appVersion()
+ * once a newer package has been installed while this one runs: the package
+ * manager swaps the files, and the running app goes on as the old version
+ * until it restarts. The build ships without asar, so the package.json beside
+ * main.js is the new one as soon as the install finishes.
+ *
+ * Null for an unpackaged run, where package.json changes with every version
+ * bump and a restart prompt would only get in the way.
+ */
+export function installedVersion(): string | null {
+  if (!app.isPackaged) return null;
+  try {
+    const { version } = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+    return typeof version === 'string' && version ? version : null;
+  } catch {
+    // Read mid-install, the file can be missing or half written. The next
+    // check reads it again.
+    return null;
+  }
+}

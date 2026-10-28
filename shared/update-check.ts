@@ -102,3 +102,22 @@ export function resolveUpdateNudge(inputs: NudgeInputs): AvailableRelease | null
   }
   return { version };
 }
+
+/**
+ * Decides whether a different version has been installed under the one that
+ * is running, and so needs a restart to take over.
+ *
+ * Any difference counts, older as well as newer: a laboratory that installs an
+ * earlier release on purpose is still running the wrong one until it
+ * restarts. A version that cannot be read counts as no difference, so a file
+ * read mid-install never prompts anyone.
+ */
+export function resolveInstalledUpdate(runningVersion: string, installedVersion?: string | null): AvailableRelease | null {
+  if (!installedVersion || !parseVersion(installedVersion) || !parseVersion(runningVersion)) {
+    return null;
+  }
+  if (compareVersions(installedVersion, runningVersion) === 0) {
+    return null;
+  }
+  return { version: installedVersion.trim().replace(/^v/i, '') };
+}

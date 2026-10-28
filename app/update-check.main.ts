@@ -10,8 +10,9 @@
  * and cannot be told which page to open: the releases page is a constant here,
  * so a renderer can ask for it to be opened but not choose what "it" is.
  */
-import { ipcMain, net, shell } from 'electron';
+import { app, ipcMain, net, shell } from 'electron';
 import { RELEASES_API_URL, RELEASES_URL } from '../shared/update-check';
+import { installedVersion } from './app-version.main';
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_RESPONSE_BYTES = 512 * 1024;
@@ -65,5 +66,18 @@ export function registerUpdateCheckIpc(): void {
   // to be opened; it cannot nominate a different page.
   ipcMain.handle('update-check-open-releases', async (): Promise<void> => {
     await shell.openExternal(RELEASES_URL);
+  });
+
+  ipcMain.handle('update-check-installed-version', (): ReleaseLookup => ({
+    version: installedVersion()
+  }));
+
+  // The operator asks for this restart, and the renderer waits for analyzers
+  // that are sending before it does. Nothing here restarts on its own.
+  ipcMain.handle('update-check-restart', (): void => {
+    setTimeout(() => {
+      app.relaunch();
+      app.exit();
+    }, 300);
   });
 }

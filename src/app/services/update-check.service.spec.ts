@@ -5,7 +5,7 @@
  * to dismiss without reading, so most of what follows is about staying quiet.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { compareVersions, resolveUpdateNudge } from '../../../shared/update-check';
+import { compareVersions, resolveInstalledUpdate, resolveUpdateNudge } from '../../../shared/update-check';
 import { UpdateCheckService } from './update-check.service';
 
 describe('comparing versions', () => {
@@ -75,11 +75,36 @@ describe('deciding whether to say anything', () => {
   });
 });
 
+describe('deciding whether an installed version needs a restart', () => {
+  it('says nothing while the running version is the installed one', () => {
+    expect(resolveInstalledUpdate('4.8.3', '4.8.3')).toBeNull();
+    expect(resolveInstalledUpdate('4.8.3', 'v4.8.3')).toBeNull();
+  });
+
+  it('names a newer installed version', () => {
+    expect(resolveInstalledUpdate('4.8.3', '4.8.4')).toEqual({ version: '4.8.4' });
+  });
+
+  it('names an older installed version too', () => {
+    // A laboratory that goes back a release on purpose still runs the wrong one.
+    expect(resolveInstalledUpdate('4.8.4', '4.8.3')).toEqual({ version: '4.8.3' });
+  });
+
+  it('says nothing about a version it cannot read', () => {
+    // package.json read mid-install, or an unpackaged run.
+    expect(resolveInstalledUpdate('4.8.3', null)).toBeNull();
+    expect(resolveInstalledUpdate('4.8.3', '')).toBeNull();
+    expect(resolveInstalledUpdate('4.8.3', 'garbled')).toBeNull();
+    expect(resolveInstalledUpdate('unreleased', '4.8.4')).toBeNull();
+  });
+});
+
 describe('the service', () => {
   const createService = (options: {
     appVersion?: string;
     dismissed?: string | null;
     published?: string | null;
+    installed?: string | null;
     invokeThrows?: boolean;
   } = {}) => {
     const values: Record<string, any> = {
@@ -91,15 +116,18 @@ describe('the service', () => {
     const invoke = vi.fn(async (channel: string) => {
       if (options.invokeThrows) throw new Error('offline');
       if (channel === 'update-check-latest-release') return { version: options.published ?? null };
+      if (channel === 'update-check-installed-version') return { version: options.installed ?? null };
       return undefined;
     });
+    const showNotification = vi.fn();
     const store = {
       get: (key: string) => values[key],
-      set: (key: string, value: any) => { values[key] = value; }
+      set: (key: string, value: any) => { values[key] = value; },
+      showNotification
     };
     const electron = { isElectron: true, ipcRenderer: { invoke } };
     const service = new UpdateCheckService(electron as any, store as any);
-    return { service, invoke, values };
+    return { service, invoke, values, showNotification };
   };
 
   it('publishes the release it found', async () => {
@@ -134,5 +162,32 @@ describe('the service', () => {
     const { service, invoke } = createService({ appVersion: undefined, published: '4.3.0' });
     await service.check();
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('says nothing while the installed version is the one running', async () => {
+    const { service, showNotification } = createService({ installed: '4.2.1' });
+    await service.checkInstalled();
+    let seen: any = 'unset';
+    service.installedUpdate().subscribe(value => { seen = value; });
+    expect(seen).toBeNull();
+    expect(showNotification).not.toHaveBeenCalled();
+  });
+
+  it('publishes an installed version and notifies once', async () => {
+    const { service, invoke, showNotification } = createService({ installed: '4.3.0' });
+    await service.checkInstalled();
+    await service.checkInstalled();
+    let seen: any = 'unset';
+    service.installedUpdate().subscribe(value => { seen = value; });
+    expect(seen).toEqual({ version: '4.3.0' });
+    expect(showNotification).toHaveBeenCalledTimes(1);
+    // The answer cannot change back without a restart, so it is not asked again.
+    expect(invoke.mock.calls.filter(([channel]) => channel === 'update-check-installed-version')).toHaveLength(1);
+  });
+
+  it('stays silent when the installed version cannot be read', async () => {
+    const { service, showNotification } = createService({ invokeThrows: true });
+    await expect(service.checkInstalled()).resolves.toBeUndefined();
+    expect(showNotification).not.toHaveBeenCalled();
   });
 });
