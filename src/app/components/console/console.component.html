@@ -51,12 +51,13 @@
     <div class="header-left">
       <h1 class="page-title">Interface Console</h1>
       <div class="connection-status">
-        <div [ngClass]="{'status-pill connected': mysqlConnected, 'status-pill disconnected': !mysqlConnected}">
+        <!-- MySQL is optional. Without it there is nothing to be disconnected from. -->
+        <div *ngIf="mysqlConfigured" [ngClass]="{'status-pill connected': mysqlConnected, 'status-pill disconnected': !mysqlConnected}">
           <i class="fa" [ngClass]="mysqlConnected ? 'fa-check-circle' : 'fa-circle fa-throb'"></i>
           {{ mysqlConnected ? 'MySQL Connected' : 'MySQL Disconnected' }}
         </div>
-        <button class="btn btn-sm system-log-toggle" [class.has-alerts]="systemLogCount > 0" (click)="toggleSystemLogs()">
-          <i class="fa" [ngClass]="systemLogCount > 0 ? 'fa-exclamation-triangle' : 'fa-shield-alt'"></i>
+        <button class="btn btn-sm system-log-toggle" [class.has-alerts]="systemLogHasAlerts" (click)="toggleSystemLogs()">
+          <i class="fa" [ngClass]="systemLogHasAlerts ? 'fa-exclamation-triangle' : 'fa-shield-alt'"></i>
           <span>System Logs ({{ systemLogCount }})</span>
         </button>
       </div>
@@ -83,7 +84,7 @@
     <div class="system-log-drawer-panel" *ngIf="systemLogsExpanded">
       <div class="system-log-drawer-header">
         <div class="system-log-drawer-title">
-          <i class="fa" [ngClass]="systemLogCount > 0 ? 'fa-exclamation-triangle' : 'fa-shield-alt'"></i>
+          <i class="fa" [ngClass]="systemLogHasAlerts ? 'fa-exclamation-triangle' : 'fa-shield-alt'"></i>
           <span>System Logs</span>
           <span class="system-log-count">{{ systemLogCount }}</span>
         </div>
@@ -109,9 +110,9 @@
           <i class="fa fa-copy"></i>
           <span>Copy</span>
         </button>
-        <button (click)="clearLiveLog(systemLogContext)" class="btn btn-sm btn-outline-danger" [disabled]="!systemLogCount">
-          <i class="fa fa-trash"></i>
-          <span>Clear</span>
+        <button (click)="clearLiveLog(systemLogContext)" class="btn btn-sm btn-outline-secondary" [disabled]="!systemLogCount">
+          <i class="fa fa-eraser"></i>
+          <span>Clear View</span>
         </button>
       </div>
 
@@ -128,7 +129,7 @@
           <ng-template #emptySystemLogs>
             <div class="log-empty">
               <i class="fa fa-info-circle"></i>
-              <span>No critical system logs to display</span>
+              <span>No system logs to show.</span>
             </div>
           </ng-template>
         </div>
@@ -214,13 +215,15 @@
                 <i class="fa fa-ban"></i>
                 <span>Cancel</span>
               </button>
-              <button *ngIf="!instrument.isConnected &&
-                      (instrument.statusText.includes('Error') ||
-                      instrument.statusText.includes('EADDRINUSE') ||
-                      (instrument.statusText.includes('Listening') && instrument.connectionInProcess))"
+              <!--
+                For a connection that does not come up: closes it, waits five
+                seconds for the port to be released, and opens it again. It
+                restarts this connection only, not the app.
+              -->
+              <button *ngIf="!instrument.isConnected && instrument.connectionInProcess"
                 class="btn btn-outline-warning btn-sm" (click)="forceRestartConnection(instrument)">
-                <i class="fa fa-bolt"></i>
-                <span>Force Restart</span>
+                <i class="fa fa-redo"></i>
+                <span>Restart Connection</span>
               </button>
             </div>
           </div>
@@ -279,9 +282,9 @@
                 <i class="fa fa-copy"></i>
                 <span>Copy</span>
               </button>
-              <button (click)="clearLiveLog(instrument)" class="btn btn-sm btn-outline-danger">
-                <i class="fa fa-trash"></i>
-                <span>Clear</span>
+              <button (click)="clearLiveLog(instrument)" class="btn btn-sm btn-outline-secondary">
+                <i class="fa fa-eraser"></i>
+                <span>Clear View</span>
               </button>
             </div>
           </div>

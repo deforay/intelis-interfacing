@@ -14,7 +14,7 @@ import { MatTableDataSource } from '@angular/material/table';
 import { MatSort } from '@angular/material/sort';
 import { SelectionModel } from "@angular/cdk/collections";
 import { MatCheckboxChange } from '@angular/material/checkbox';
-import { fromEvent, Subscription } from 'rxjs';
+import { catchError, forkJoin, fromEvent, of, Subscription } from 'rxjs';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { debounceTime, distinctUntilChanged, map } from 'rxjs/operators';
@@ -66,6 +66,8 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
   public recentResultsInterval: any; // Interval for fetching recent results
   public mysqlCheckInterval: any; // Interval for checking MySQL connection
   public mysqlConnected: boolean = false;  // To store the MySQL connection status
+  /** False when no MySQL host is set. MySQL is optional. */
+  public mysqlConfigured = false;
   public walCheckpointInterval: any; // Interval for performing SQLite WAL checkpoints
   public limsSyncPullInterval: any; // Interval for pulling LIMS sync status updates from MySQL
   public data: any;
@@ -590,23 +592,43 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
     this.dialog.open(TransmissionDialogComponent, { data: row, width: '900px', maxWidth: '95vw' });
   }
 
+  /**
+   * Marks the selected results to be sent to the LIS again, then says how many
+   * were marked. Synced to LIS shows Not yet until the LIS takes them.
+   */
   reSyncSelectedRecords() {
-    this.selection.selected.forEach(selectedRow => {
-      if (this.utilitiesService) {
-        this.utilitiesService.reSyncRecord(selectedRow.order_id).subscribe({
-          next: () => {
-            selectedRow.lims_sync_status = '0';
-            this.dataSource.data = [...this.dataSource.data];
-            // Clear selection after re-sync
-            this.selection.clear();
-          },
-          error: (error) => {
-            console.error('Error during re-sync:', error);
-          }
+    const selectedRows = [...this.selection.selected];
+    if (selectedRows.length === 0) return;
+
+    forkJoin(selectedRows.map(row =>
+      this.utilitiesService.reSyncRecord(row.order_id).pipe(
+        map(() => {
+          row.lims_sync_status = '0';
+          return true;
+        }),
+        catchError(error => {
+          console.error('Error during re-sync:', error);
+          return of(false);
+        })
+      )
+    )).subscribe(outcomes => {
+      const marked = outcomes.filter(Boolean).length;
+      const notMarked = outcomes.length - marked;
+      this.dataSource.data = [...this.dataSource.data];
+      this.selection.clear();
+
+      const resultWord = (count: number) => count === 1 ? 'result' : 'results';
+      const message = notMarked === 0
+        ? `${marked} ${resultWord(marked)} will sync to the LIS again.`
+        : `${marked} ${resultWord(marked)} will sync to the LIS again. ${notMarked} could not be marked. Select them and press Re-sync Selected again.`;
+      this._ngZone.run(() => {
+        this.snackBar.open(message, undefined, {
+          duration: 5000,
+          horizontalPosition: 'end',
+          verticalPosition: 'bottom'
         });
-      } else {
-        console.error('Utilities service is undefined.');
-      }
+      });
+      this.cdRef.detectChanges();
     });
   }
 
@@ -786,6 +808,14 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
     return this.systemLogs?.filteredLogs?.length ?? 0;
   }
 
+  /**
+   * True when a warning or an error is in the System Logs. Routine information
+   * there is not a reason to look, so it does not turn the button into an alert.
+   */
+  get systemLogHasAlerts(): boolean {
+    return this.systemLogs?.logs?.some(log => log.type === 'error' || log.type === 'warn') ?? false;
+  }
+
   toggleSystemLogs(): void {
     this.systemLogsExpanded = !this.systemLogsExpanded;
   }
@@ -908,12 +938,17 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
       + `${pad(value.getHours())}:${pad(value.getMinutes())}:${pad(value.getSeconds())}.${pad(value.getMilliseconds(), 3)}`;
   }
 
+  /**
+   * Empties this log viewer. The log files and the stored log are unchanged,
+   * which the button and the message both say: a red "Clear" beside "Delete
+   * Old Logs" in Settings read as deleting.
+   */
   clearLiveLog(instrument: any) {
     const instrumentId = instrument.connectionParams.instrumentId;
     // This will trigger the subscription to clear the UI
     this.logDisplayService.clearLogs(instrumentId);
     this._ngZone.run(() => {
-      this.snackBar.open('Logs cleared', undefined, {
+      this.snackBar.open('Cleared from view. The log files are unchanged.', undefined, {
         duration: 3000,
         horizontalPosition: 'end',
         verticalPosition: 'bottom'
@@ -976,6 +1011,12 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
 
   checkMysqlConnection() {
     const commonSettings = this.store.get('commonConfig');
+    this.mysqlConfigured = !!commonSettings?.mysqlHost?.trim();
+    if (!this.mysqlConfigured) {
+      this.mysqlConnected = false;
+      this.cdRef.detectChanges();
+      return;
+    }
     const mysqlParams = {
       host: commonSettings.mysqlHost,
       user: commonSettings.mysqlUser,
@@ -998,7 +1039,8 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
 
   runSQLiteWalCheckpoint(): void {
     this.utilitiesService.sqlite3WalCheckpoint();
-    this.utilitiesService.logger('info', 'SQLite WAL checkpoint scheduled and executed', null);
+    // Routine upkeep every 30 minutes. Nothing for an operator to act on.
+    console.log('SQLite WAL checkpoint scheduled and executed');
   }
 
   cancelConnection(instrument: any) {

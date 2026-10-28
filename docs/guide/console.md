@@ -10,7 +10,7 @@ Each configured instrument is a tab across the top, showing:
 - **Connection details**: machine type, connection mode, address, protocol
 - **Connection logs**: what is happening on the wire, as it happens
 
-To connect: if **Auto-connect on startup** is on, the tool connects everything
+To connect: if **Skip Sign-in and Connect at Startup** is on, the tool connects everything
 at startup. If it is off, sign in and press **Connect** on each tab. For a TCP
 server the button reads **Start Server**.
 

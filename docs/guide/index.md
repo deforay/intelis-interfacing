@@ -42,7 +42,7 @@ nothing to show on the console until an instrument is configured.
 
 !!! tip "Skipping the login"
 
-    **Auto-connect on startup** in [system settings](settings.md#system) skips
+    **Skip Sign-in and Connect at Startup** in [system settings](settings.md#system) skips
     the login screen and connects every instrument as soon as the application
     opens. On a dedicated machine beside the analyzer, that is usually what you
     want: if the computer opens the tool at startup, the tool is listening

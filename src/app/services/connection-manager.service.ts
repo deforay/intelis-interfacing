@@ -545,11 +545,7 @@ export class ConnectionManagerService implements OnDestroy {
       this.notifyInstrumentsChanged();
     }
 
-    // Use a Node.js child process to forcefully kill any process using the port
-    // This is Electron-specific and uses the 'child_process' module
-    // You'll need to implement this through your ElectronService or similar service
-
-    // After force killing, add a delay then reconnect
+    // Reconnect after a delay, so the port is released first.
     this.scheduleInstrumentTask(instrument.connectionParams.instrumentId, () => {
       this.reconnect(instrument);
     }, 5000); // 5 seconds to allow port to be fully released

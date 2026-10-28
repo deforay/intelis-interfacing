@@ -101,13 +101,14 @@
               </div>
 
               <div class="form-group">
-                <label for="settingsAutoConnect">Auto-connect on startup</label>
+                <label for="settingsAutoConnect">Skip Sign-in and Connect at Startup</label>
                 <div class="custom-select-wrapper">
                   <select id="settingsAutoConnect" formControlName="interfaceAutoConnect" class="form-control" required>
-                    <option value="yes">Yes - Connect automatically</option>
-                    <option value="no">No - Manual connection</option>
+                    <option value="yes">Yes - Open the console and connect every instrument</option>
+                    <option value="no">No - Show the sign-in screen and connect by hand</option>
                   </select>
                 </div>
+                <small class="help-text">Yes lets the tool start unattended, for example after a power cut.</small>
               </div>
 
               <div class="form-group">
@@ -123,7 +124,7 @@
               <div class="form-group">
                 <label for="settingsTimeZone">Time Zone</label>
                 <input id="settingsTimeZone" type="text" formControlName="timeZone" class="form-control"
-                  placeholder="Search, e.g. Kampala or UTC+03" autocomplete="off"
+                  placeholder="Search by city or UTC offset, e.g. UTC+03" autocomplete="off"
                   [matAutocomplete]="autoTimeZone">
                 <mat-autocomplete #autoTimeZone="matAutocomplete">
                   <mat-option *ngFor="let option of filterTimeZones(settingsForm.get('commonSettings.timeZone')?.value)"

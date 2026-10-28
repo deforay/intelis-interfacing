@@ -66,7 +66,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
     this.loadInstrumentNames();
 
     // Load session data
-    this.loadSessionData();
     this.retrieveSessionData();
     this.filterSessionData();
   }
@@ -162,22 +161,6 @@ export class DashboardComponent implements OnInit, OnDestroy {
       }));
     } else {
       console.error('No valid session data found in local storage.');
-    }
-  }
-
-  private loadSessionData() {
-    const sessionId = localStorage.getItem('sessionId');
-    if (sessionId) {
-      const startTime = localStorage.getItem(`${sessionId}_startTime`);
-      const endTime = localStorage.getItem(`${sessionId}_closeTime`);
-      if (startTime) {
-        this.sessionDatasArray.push({
-          mode: 'Current Session',
-          sessionId: sessionId,
-          startTime: startTime,
-          endTime: endTime || 'N/A'
-        });
-      }
     }
   }
 
