@@ -42,6 +42,8 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
   // Caps live-log re-renders at ~10/s. Uses a timer rather than an animation
   // frame so logs keep rendering while the window is hidden or minimised.
   private static readonly LOG_RENDER_INTERVAL_MS = 100;
+  /** The longest a restart for an installed update waits for analyzers that are sending. */
+  private static readonly MAX_RESTART_WAIT_SECONDS = 120;
   private logRenderTimer: ReturnType<typeof setTimeout> | null = null;
   private viewDestroyed = false;
   searchTerm: string = '';
@@ -51,6 +53,14 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
   public appVersion: string = null;
   /** The newer release to mention, or null when there is nothing to say. */
   public availableUpdate: { version: string } | null = null;
+  /** A version installed under the running one, which a restart takes up. */
+  public installedUpdate: { version: string } | null = null;
+  /** True once the operator chose Later. The footer still says it. */
+  public installedUpdateDeferred = false;
+  public restartingForUpdate = false;
+  /** Instruments the restart is waiting for. */
+  public restartWaitingFor: string[] = [];
+  private restartWaitTimer: ReturnType<typeof setInterval> | null = null;
   public lastLimsSync = '';
   public lastResultReceived = '';
   public recentResultsInterval: any; // Interval for fetching recent results
@@ -63,6 +73,7 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
   public showScrollToTop = false;
   private readonly ipc: any;
   private updateSubscription: Subscription | null = null;
+  private installedUpdateSubscription: Subscription | null = null;
   public availableInstruments = [];
   private readonly loadedLogInstrumentIds = new Set<string>();
   public instrumentLogs: { [instrumentId: string]: { logs: any[]; filteredLogs: any[] } } = {};
@@ -240,6 +251,10 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.updateSubscription = this.updateCheckService.availableUpdate().subscribe(update => {
       this.availableUpdate = update;
+      this.cdRef.detectChanges();
+    });
+    this.installedUpdateSubscription = this.updateCheckService.installedUpdate().subscribe(update => {
+      this.installedUpdate = update;
       this.cdRef.detectChanges();
     });
     this.updateCheckService.start();
@@ -1004,10 +1019,51 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
     void this.updateCheckService.openReleasesPage();
   }
 
+  deferInstalledUpdate() {
+    this.installedUpdateDeferred = true;
+  }
+
+  /**
+   * Restarts into the installed version once no analyzer is sending, so no
+   * transmission is cut off. The wait is capped, as it is for the database
+   * restart, because a connection stuck mid-transmission would hold it forever.
+   */
+  restartForInstalledUpdate() {
+    if (this.restartingForUpdate) return;
+    this.restartingForUpdate = true;
+    let waitedSeconds = 0;
+    const tryRestart = () => {
+      this.restartWaitingFor = this.connectionManagerService.instrumentsReceiving();
+      if (this.restartWaitingFor.length === 0 || waitedSeconds >= ConsoleComponent.MAX_RESTART_WAIT_SECONDS) {
+        this.stopRestartWait();
+        this.updateCheckService.restart().catch(err => {
+          console.error('Could not restart to finish the update:', err);
+          this.restartingForUpdate = false;
+          this.cdRef.detectChanges();
+        });
+      }
+      waitedSeconds++;
+      this.cdRef.detectChanges();
+    };
+    tryRestart();
+    if (this.restartingForUpdate && !this.restartWaitTimer && this.restartWaitingFor.length > 0) {
+      this.restartWaitTimer = setInterval(tryRestart, 1000);
+    }
+  }
+
+  private stopRestartWait() {
+    if (this.restartWaitTimer) {
+      clearInterval(this.restartWaitTimer);
+      this.restartWaitTimer = null;
+    }
+  }
+
   ngOnDestroy() {
     this.viewDestroyed = true;
     this.visibleColumnsSubscription?.unsubscribe();
     this.updateSubscription?.unsubscribe();
+    this.installedUpdateSubscription?.unsubscribe();
+    this.stopRestartWait();
     document.removeEventListener('visibilitychange', this.visibilityChangeHandler);
     if (this.initialResultsTimeout) {
       clearTimeout(this.initialResultsTimeout);

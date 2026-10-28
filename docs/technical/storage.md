@@ -109,6 +109,14 @@ The operational log, the PII-free usage events and their daily aggregates (see
 They are copied into the data directory at startup so an installation carries
 the migrations it has actually applied.
 
+Installing a package applies nothing. The migrations run when the tool starts:
+SQLite in the main process before the window opens, MySQL when the renderer
+first connects. A tool left running through an upgrade goes on with the old
+code and the old schema. It reads the version from the `package.json` beside
+`main.js` every minute, which the build can do because it ships without asar.
+When that differs from the running version, the console asks the operator to
+restart (`update-check-installed-version` in `app/update-check.main.ts`).
+
 **An applied migration is never edited.** A machine in a laboratory has already
 run it. Changing the file means that machine's schema and a freshly installed
 one will never agree again, and nothing will report the difference. Add another

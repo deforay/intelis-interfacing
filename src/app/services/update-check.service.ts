@@ -1,6 +1,6 @@
 import { Injectable, OnDestroy } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
-import { AvailableRelease, resolveUpdateNudge } from '../../../shared/update-check';
+import { AvailableRelease, resolveInstalledUpdate, resolveUpdateNudge } from '../../../shared/update-check';
 import { ElectronService } from '../core/services';
 import { ElectronStoreService } from './electron-store.service';
 
@@ -9,6 +9,11 @@ const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 /** Long enough after startup that connecting instruments comes first. */
 const FIRST_CHECK_DELAY_MS = 30_000;
 const DISMISSED_VERSION_KEY = 'dismissedUpdateVersion';
+/**
+ * How often to look at the version on disk. It is a small local file, and an
+ * upgrade done over SSH should be noticed by whoever next looks at the screen.
+ */
+const INSTALLED_CHECK_INTERVAL_MS = 60_000;
 
 /**
  * Tells the operator when a newer version has been published, and nothing else.
@@ -30,7 +35,9 @@ const DISMISSED_VERSION_KEY = 'dismissedUpdateVersion';
 @Injectable({ providedIn: 'root' })
 export class UpdateCheckService implements OnDestroy {
   private readonly available = new BehaviorSubject<AvailableRelease | null>(null);
+  private readonly installed = new BehaviorSubject<AvailableRelease | null>(null);
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private installedTimer: ReturnType<typeof setInterval> | null = null;
   private started = false;
 
   constructor(
@@ -49,11 +56,65 @@ export class UpdateCheckService implements OnDestroy {
     }
     this.started = true;
     this.schedule(FIRST_CHECK_DELAY_MS);
+    this.installedTimer = setInterval(() => void this.checkInstalled(), INSTALLED_CHECK_INTERVAL_MS);
   }
 
   ngOnDestroy(): void {
     if (this.timer) {
       clearTimeout(this.timer);
+    }
+    this.stopInstalledChecks();
+  }
+
+  /** A version installed under the running one, or null. */
+  installedUpdate(): Observable<AvailableRelease | null> {
+    return this.installed.asObservable();
+  }
+
+  /**
+   * Asks whether the version on disk differs from the one running. Once it
+   * does, the checks stop: the answer cannot change back until a restart.
+   */
+  async checkInstalled(): Promise<void> {
+    const runningVersion = this.store.get('appVersion');
+    if (!runningVersion || this.installed.value || !this.electron.isElectron || !this.electron.ipcRenderer) {
+      return;
+    }
+
+    let installedVersion: string | null = null;
+    try {
+      const result = await this.electron.ipcRenderer.invoke('update-check-installed-version');
+      installedVersion = typeof result?.version === 'string' ? result.version : null;
+    } catch {
+      return;
+    }
+
+    const update = resolveInstalledUpdate(runningVersion, installedVersion);
+    if (!update) {
+      return;
+    }
+    this.stopInstalledChecks();
+    this.installed.next(update);
+    try {
+      // The window is often hidden in the tray while instruments run.
+      this.store.showNotification(
+        `Version ${update.version} is installed`,
+        'Restart InteLIS Interfacing to finish the update.'
+      );
+    } catch {
+      // A notification is a courtesy. The banner is the notice.
+    }
+  }
+
+  /** Restarts the app. The caller waits for analyzers that are sending first. */
+  async restart(): Promise<void> {
+    await this.electron.ipcRenderer?.invoke('update-check-restart');
+  }
+
+  private stopInstalledChecks(): void {
+    if (this.installedTimer) {
+      clearInterval(this.installedTimer);
+      this.installedTimer = null;
     }
   }
 

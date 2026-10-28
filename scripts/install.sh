@@ -154,6 +154,20 @@ install_package() {
   return 1
 }
 
+# WHY: the application updates its databases when it starts, not when it is
+# installed. An upgrade done over SSH, with nobody at the machine to open the
+# application, leaves the update waiting -- and a database checked in the
+# meantime looks as though the update failed.
+report_database_update_pending() {
+  local package_path="$1" version
+
+  version="$(field_from_deb Version "${package_path}")"
+  echo ""
+  echo "Version ${version:-(unknown)} is installed."
+  echo "Its databases are updated the next time the application starts. If it is"
+  echo "open now, close it and open it again."
+}
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -280,6 +294,7 @@ install_latest() {
   curl --proto "${HTTPS_ONLY}" --proto-redir "${HTTPS_ONLY}" -fL "${asset_url}" -o "${package_path}"
 
   if install_package "${package_path}"; then
+    report_database_update_pending "${package_path}"
     return
   fi
 
@@ -296,6 +311,7 @@ install_latest() {
   # carried on running the version it had.
   if downloaded_package_is_installed "${package_path}"; then
     echo "Installation completed after dependency repair."
+    report_database_update_pending "${package_path}"
     return
   fi
 
