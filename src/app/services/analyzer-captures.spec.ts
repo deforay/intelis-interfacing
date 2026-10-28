@@ -174,7 +174,7 @@ describe('Abbott Alinity m capture (HL7)', () => {
           results: 'Not Detected',
           test_unit: '',
           notes: '',
-          tested_by: 'Pat~operator',
+          tested_by: 'TECH01~operator',
           analysed_date_time: ALINITY_RESULT_TIME_FORMATTED,
           result_status: 1
         });
