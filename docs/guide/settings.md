@@ -43,6 +43,13 @@ configuration that depends on it.
 
 Press **Add Instrument** for each analyzer this tool talks to.
 
+<figure markdown>
+  <video controls muted playsinline preload="metadata" width="100%" poster="../../assets/guides/add-instrument-poster.jpg">
+    <source src="../../assets/guides/add-instrument.mp4" type="video/mp4">
+  </video>
+  <figcaption>A Roche Cobas 6800/8800 added as a TCP client at 192.168.1.50, port 3120. The analyzer type fills in HL7 as the protocol.</figcaption>
+</figure>
+
 ### Connection
 
 | Field | What it is |
