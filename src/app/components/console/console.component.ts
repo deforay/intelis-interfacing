@@ -60,6 +60,8 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
   public restartingForUpdate = false;
   /** Instruments the restart is waiting for. */
   public restartWaitingFor: string[] = [];
+  /** True while results that arrived are still being saved. */
+  public restartWaitingForSaves = false;
   private restartWaitTimer: ReturnType<typeof setInterval> | null = null;
   public lastLimsSync = '';
   public lastResultReceived = '';
@@ -1066,8 +1068,8 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   /**
-   * Restarts into the installed version once no analyzer is sending, so no
-   * transmission is cut off. The wait is capped, as it is for the database
+   * Restarts into the installed version once no instrument is sending and
+   * everything received is saved, so no transmission or result is cut off. The wait is capped, as it is for the database
    * restart, because a connection stuck mid-transmission would hold it forever.
    */
   restartForInstalledUpdate() {
@@ -1076,7 +1078,9 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
     let waitedSeconds = 0;
     const tryRestart = () => {
       this.restartWaitingFor = this.connectionManagerService.instrumentsReceiving();
-      if (this.restartWaitingFor.length === 0 || waitedSeconds >= ConsoleComponent.MAX_RESTART_WAIT_SECONDS) {
+      this.restartWaitingForSaves = this.restartWaitingFor.length === 0 && this.connectionManagerService.hasUnsavedData();
+      const busy = this.restartWaitingFor.length > 0 || this.restartWaitingForSaves;
+      if (!busy || waitedSeconds >= ConsoleComponent.MAX_RESTART_WAIT_SECONDS) {
         this.stopRestartWait();
         this.updateCheckService.restart().catch(err => {
           console.error('Could not restart to finish the update:', err);
@@ -1088,7 +1092,7 @@ export class ConsoleComponent implements OnInit, AfterViewInit, OnDestroy {
       this.cdRef.detectChanges();
     };
     tryRestart();
-    if (this.restartingForUpdate && !this.restartWaitTimer && this.restartWaitingFor.length > 0) {
+    if (this.restartingForUpdate && !this.restartWaitTimer && (this.restartWaitingFor.length > 0 || this.restartWaitingForSaves)) {
       this.restartWaitTimer = setInterval(tryRestart, 1000);
     }
   }

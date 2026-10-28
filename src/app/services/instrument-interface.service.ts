@@ -65,6 +65,8 @@ export class InstrumentInterfaceService {
   // A block that is complete but for its <CR>, with the timer waiting for it
   // and the work to take the block as it stands
   private readonly hl7PendingTerminator = new Map<string, { timer: ReturnType<typeof setTimeout>; flush: () => void }>();
+  /** Raw copies and results being written now. See hasUnsavedData(). */
+  private savesInProgress = 0;
   private readonly connectedInstruments = new Map<string, BehaviorSubject<boolean>>();
   private readonly connectionStatusSubscriptions = new Map<string, Subscription>();
   private readonly lastProtocolMismatchReport = new Map<string, number>();
@@ -524,7 +526,7 @@ export class InstrumentInterfaceService {
           transmission_id: transmissionId
         };
 
-        this.dbService.recordRawData(rawData, () => {
+        this.recordRawDataTracked(rawData, () => {
           this.utilitiesService.logger('success', 'Successfully saved raw ASTM data', instrumentConnectionData.instrumentId);
         }, (err: any) => {
           this.utilitiesService.logger('error', 'Failed to save raw data : ' + JSON.stringify(err), instrumentConnectionData.instrumentId);
@@ -658,7 +660,7 @@ export class InstrumentInterfaceService {
         instrument_id: instrumentConnectionData.instrumentId,
         transmission_id: transmissionId
       };
-      this.dbService.recordRawData(rawData, () => {
+      this.recordRawDataTracked(rawData, () => {
         this.utilitiesService.logger('success', 'Successfully saved raw HL7 data', instrumentConnectionData.instrumentId);
       }, (err: any) => {
         this.utilitiesService.logger('error', 'Failed to save raw data ' + JSON.stringify(err), instrumentConnectionData.instrumentId);
@@ -829,7 +831,47 @@ export class InstrumentInterfaceService {
     }
   }
 
+  /**
+   * True while anything received is not yet stored: a raw copy or a result
+   * being written, or HL7 bytes still held for the rest of a message. An
+   * instrument stops counting as sending before its results are written, so a
+   * restart must wait for this as well as for instruments that are sending.
+   */
+  hasUnsavedData(): boolean {
+    return this.savesInProgress > 0 || this.hl7PendingTerminator.size > 0 || this.hl7ReceiveBuffers.size > 0;
+  }
+
+  private trackSave<T>(save: Promise<T>): Promise<T> {
+    this.savesInProgress++;
+    return save.finally(() => {
+      this.savesInProgress--;
+    });
+  }
+
+  /** recordRawData, counted until it answers either way. */
+  private recordRawDataTracked(rawData: RawMachineData, success: (result: any) => void, failure: (err: any) => void): void {
+    this.savesInProgress++;
+    let settled = false;
+    const settle = () => {
+      if (!settled) {
+        settled = true;
+        this.savesInProgress--;
+      }
+    };
+    this.dbService.recordRawData(rawData, (result: any) => {
+      settle();
+      success(result);
+    }, (err: any) => {
+      settle();
+      failure(err);
+    });
+  }
+
   private saveResult(sampleResult: any, instrumentConnectionData: InstrumentConnectionStack, options: ResultSaveOptions = {}): Promise<boolean> {
+    return this.trackSave(this.writeResult(sampleResult, instrumentConnectionData, options));
+  }
+
+  private writeResult(sampleResult: any, instrumentConnectionData: InstrumentConnectionStack, options: ResultSaveOptions = {}): Promise<boolean> {
     if (!sampleResult) {
       return Promise.resolve(this.reportMissingResult(sampleResult, instrumentConnectionData));
     }

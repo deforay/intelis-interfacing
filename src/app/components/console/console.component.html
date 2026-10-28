@@ -15,7 +15,10 @@
     <span class="update-text" *ngIf="restartingForUpdate && restartWaitingFor.length > 0">
       Restarting when {{ restartWaitingFor.join(', ') }} {{ restartWaitingFor.length > 1 ? 'finish' : 'finishes' }} sending.
     </span>
-    <span class="update-text" *ngIf="restartingForUpdate && restartWaitingFor.length === 0">
+    <span class="update-text" *ngIf="restartingForUpdate && restartWaitingFor.length === 0 && restartWaitingForSaves">
+      Restarting when the latest results are saved.
+    </span>
+    <span class="update-text" *ngIf="restartingForUpdate && restartWaitingFor.length === 0 && !restartWaitingForSaves">
       Restarting.
     </span>
     <button class="btn btn-sm btn-primary" (click)="restartForInstalledUpdate()" [disabled]="restartingForUpdate">
