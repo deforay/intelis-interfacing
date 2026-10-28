@@ -14,13 +14,14 @@
  * - Sixteen INV segments and an NTE sit between OBX.1 and the supplemental
  *   OBX segments (interpretation, cycle number, run id, control readings;
  *   newer software adds a log10 value).
- * - OBX.16 is "Pat~<operator>" and OBX.19 the result time.
+ * - OBX.16 holds the operator as two repetitions, a user name then a role
+ *   ("TECH01~operator" here), and OBX.19 the result time.
  */
 import { CR } from '../../wire-harness';
 
 export const ALINITY_RESULT_TIME = '20260112142906';
 export const ALINITY_RESULT_TIME_FORMATTED = '2026-01-12 14:29:06';
-export const ALINITY_OPERATOR = 'Pat~operator';
+export const ALINITY_OPERATOR = 'TECH01~operator';
 const DEVICE = 'Alinity m^Abbott~M00001^Abbott~1^Abbott~11^Abbott';
 
 export interface AlinitySample {
