@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { DatabaseService } from './database.service';
-import { BehaviorSubject, Observable, of } from 'rxjs';
+import { BehaviorSubject, Observable } from 'rxjs';
 import { ElectronService } from '../core/services';
 import { LoggingService, LogOptions } from './logging.service';
 import { ElectronStoreService } from './electron-store.service';
@@ -261,7 +261,7 @@ export class UtilitiesService {
   }
 
   reSyncRecord(orderId: string): Observable<any> {
-    return of(this.dbService.reSyncRecord(orderId));
+    return this.dbService.reSyncRecord(orderId);
   }
 
   resyncIntelisStatusesToMySQL(success: any, errorf: any): void {

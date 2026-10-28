@@ -123,13 +123,13 @@
     </div>
   </div>
 
-  <!-- App Usage Section -->
-  <div class="usage-section" *ngIf="sessionDatasArray.length > 0">
+  <!-- The latest connection of each instrument, following the instrument filter above. -->
+  <div class="usage-section" *ngIf="filteredSessionDatasArray.length > 0">
     <div class="section-header">
-      <h2>App Usage History</h2>
+      <h2>Connection History</h2>
     </div>
     <div class="usage-timeline">
-      <div class="timeline-item" *ngFor="let session of sessionDatasArray">
+      <div class="timeline-item" *ngFor="let session of filteredSessionDatasArray">
         <div class="timeline-marker" [ngClass]="{
           'active': session.endTime === 'N/A' && isInstrumentCurrentlyAvailable(session.mode),
           'unknown': session.endTime === 'N/A' && !isInstrumentCurrentlyAvailable(session.mode)
@@ -163,28 +163,4 @@
     </div>
   </div>
 
-  <!-- Instrument Connectivity Section -->
-  <div class="connectivity-section" *ngIf="filteredSessionDatasArray.length > 0">
-    <div class="section-header">
-      <h2>Instrument Connectivity</h2>
-    </div>
-    <div class="connectivity-grid">
-      <div class="connectivity-card" *ngFor="let session of filteredSessionDatasArray">
-        <div class="connectivity-header">
-          <i class="fa fa-network-wired"></i>
-          <span>{{ session.mode }}</span>
-        </div>
-        <div class="connectivity-times">
-          <div class="time-stat">
-            <span class="time-label">Start Time</span>
-            <p>{{ session.startTime }}</p>
-          </div>
-          <div class="time-stat">
-            <span class="time-label">End Time</span>
-            <p>{{ session.endTime }}</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
 </div>

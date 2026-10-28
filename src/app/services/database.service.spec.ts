@@ -670,7 +670,9 @@ describe('DatabaseService log display', () => {
       service.fetchRecentSystemLogs() as ReturnType<DatabaseService['fetchRecentSystemLogs']>
     );
 
-    expect(service.execSqlite.mock.calls[0][0]).toContain("category IN ('system', 'database', 'migration')");
+    expect(service.execSqlite.mock.calls[0][0]).toContain("category IN ('system', 'database')");
+    // Migration detail stays in the log files. It must not return to the screen after a restart.
+    expect(service.execSqlite.mock.calls[0][0]).not.toContain("'migration'");
     expect(entries[0]).toMatchObject({
       type: 'error',
       message: 'MySQL write failed',

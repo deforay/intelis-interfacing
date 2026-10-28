@@ -3,7 +3,7 @@ import { ElectronService } from '../core/services';
 import { ElectronStoreService } from './electron-store.service';
 import { CryptoService } from './crypto.service'
 import { LoggingService } from './logging.service';
-import { BehaviorSubject, Observable, Subject } from 'rxjs';
+import { BehaviorSubject, Observable, ReplaySubject, Subject } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
 import { TelemetryEventInput } from '../interfaces/telemetry-event.interface';
 import { RawDataFilter, RawDataStore } from '../interfaces/raw-machine-data.interface';
@@ -101,6 +101,8 @@ export class DatabaseService {
   // Silent SQLite repairs this session. Two is enough: a third would mean the
   // migrations themselves cannot add what the code needs.
   private sqliteReplayCount = 0;
+  // One plain System Logs line per session for a failed database update.
+  private databaseUpdateIssueShown = false;
   private sqliteReplay: Promise<boolean> | null = null;
   // When the last database repair restarted the app, set by the main process.
   // A schema error soon after one means the repair did not fix it, and
@@ -817,6 +819,19 @@ export class DatabaseService {
     instrumentId: string | null = null,
     displayInConsole = true
   ): void {
+    if (category === 'migration' && displayInConsole) {
+      // WHY: file names, statement numbers and "migration" mean nothing at a
+      // lab bench. The detail goes to the log files, and System Logs gets one
+      // plain line per session that says what happens next.
+      this.loggingService.log('error', message, instrumentId, { category, displayInConsole: false });
+      if (!this.databaseUpdateIssueShown) {
+        this.databaseUpdateIssueShown = true;
+        this.loggingService.log('warn',
+          'The database could not finish an update. The tool tries again at the next start. The details are in the log files.',
+          instrumentId, { category: 'database', displayInConsole: true });
+      }
+      return;
+    }
     this.loggingService.log('error', message, instrumentId, {
       category,
       displayInConsole
@@ -2066,7 +2081,9 @@ export class DatabaseService {
   }
 
   reSyncRecord(orderId: string): Observable<any> {
-    const subject = new Subject<any>();
+    // WHY a ReplaySubject: the query starts before anyone subscribes, so a
+    // quick answer must still reach a subscriber that arrives after it.
+    const subject = new ReplaySubject<any>(1);
     const updateQuery = `UPDATE orders SET lims_sync_status = '0', lims_sync_date_time = CURRENT_TIMESTAMP WHERE order_id = ?`;
     this.execQuery(
       updateQuery,
@@ -2609,7 +2626,9 @@ export class DatabaseService {
     const query = `SELECT * FROM app_log
       WHERE log_type IN ('error', 'warn')
         AND (
-          category IN ('system', 'database', 'migration')
+          -- Migration detail is for the log files, never the screen. The
+          -- plain line shown in its place is stored as 'database'.
+          category IN ('system', 'database')
           OR (instrument_id IS NULL AND (category IS NULL OR category = 'operational'))
         )
       ORDER BY id DESC LIMIT ?`;
