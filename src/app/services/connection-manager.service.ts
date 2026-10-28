@@ -253,6 +253,11 @@ export class ConnectionManagerService implements OnDestroy {
   }
 
   /** The instruments sending data at this moment, by name. */
+  /** True while received data is not yet stored. A restart waits for it. */
+  hasUnsavedData(): boolean {
+    return this.instrumentInterfaceService.hasUnsavedData();
+  }
+
   instrumentsReceiving(): string[] {
     return [...this.activeInstruments.values()]
       .filter(instrument => instrument.transmissionInProgress)

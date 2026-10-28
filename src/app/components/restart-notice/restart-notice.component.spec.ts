@@ -5,12 +5,13 @@ import { RestartNoticeComponent } from './restart-notice.component';
 describe('RestartNoticeComponent', () => {
   let restartRequired: BehaviorSubject<boolean>;
   let receiving: string[];
+  let unsaved: boolean;
   let restart: ReturnType<typeof vi.fn>;
 
   const createComponent = () => {
     const component = new RestartNoticeComponent(
       { restartRequired$: restartRequired, performForceRerunMigrations: restart } as any,
-      { instrumentsReceiving: () => receiving } as any,
+      { instrumentsReceiving: () => receiving, hasUnsavedData: () => unsaved } as any,
       { ipcRenderer: { invoke: vi.fn().mockResolvedValue(undefined) } } as any,
       { showNotification: vi.fn() } as any,
       { detectChanges: vi.fn() } as any
@@ -23,6 +24,7 @@ describe('RestartNoticeComponent', () => {
     vi.useFakeTimers();
     restartRequired = new BehaviorSubject<boolean>(false);
     receiving = [];
+    unsaved = false;
     restart = vi.fn().mockResolvedValue(undefined);
   });
 
@@ -72,6 +74,21 @@ describe('RestartNoticeComponent', () => {
     expect(component.waitingFor).toEqual(['GeneXpert']);
 
     receiving = [];
+    vi.advanceTimersByTime(1000);
+    expect(restart).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for results still being saved after the sending ends, then restarts', () => {
+    // An instrument stops counting as sending before its results are written.
+    const component = createComponent();
+    unsaved = true;
+    restartRequired.next(true);
+
+    vi.advanceTimersByTime((RestartNoticeComponent.COUNTDOWN_SECONDS + 5) * 1000);
+    expect(restart).not.toHaveBeenCalled();
+    expect(component.waitingForSaves).toBe(true);
+
+    unsaved = false;
     vi.advanceTimersByTime(1000);
     expect(restart).toHaveBeenCalledTimes(1);
   });

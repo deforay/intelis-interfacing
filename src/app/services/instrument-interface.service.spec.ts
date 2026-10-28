@@ -190,6 +190,34 @@ describe('InstrumentInterfaceService HL7 streams', () => {
     expect(processSpy.mock.calls[1][1]).not.toContain('FIRST');
   });
 
+  it('counts received data as unsaved until its raw copy is written', () => {
+    // A restart waits on this. The instrument stops counting as sending
+    // before the raw copy, the only copy, is written.
+    const { service, dbService, tcpService } = createService();
+    let finishRawWrite: () => void = () => undefined;
+    dbService.recordRawData.mockImplementation((_data, success) => { finishRawWrite = success; });
+    const key = '10.0.0.1:5001:tcpserver:hl7';
+    tcpService.connectionStack.set(key, createConnection('ANALYZER-A'));
+    vi.spyOn(service, 'processHL7Message').mockImplementation(() => undefined);
+
+    expect(service.hasUnsavedData()).toBe(false);
+    service.handleTCPResponse(key, Buffer.from('\x0bMSH|^~\\&|A|LAB|RESULT\x1c\r'));
+    expect(service.hasUnsavedData()).toBe(true);
+
+    finishRawWrite();
+    expect(service.hasUnsavedData()).toBe(false);
+  });
+
+  it('counts an incomplete HL7 message as unsaved', () => {
+    const { service, tcpService } = createService();
+    const key = '10.0.0.1:5001:tcpserver:hl7';
+    tcpService.connectionStack.set(key, createConnection('ANALYZER-A'));
+    vi.spyOn(service, 'processHL7Message').mockImplementation(() => undefined);
+
+    service.handleTCPResponse(key, Buffer.from('MSH|^~\\&|A|LAB|PARTIAL'));
+    expect(service.hasUnsavedData()).toBe(true);
+  });
+
   it('keeps the tail after a block separator for the next message', () => {
     const { service, tcpService } = createService();
     const key = '10.0.0.1:5001:tcpserver:hl7';

@@ -3,7 +3,10 @@
     <h2 id="restartNoticeTitle">Restart required</h2>
     <p id="restartNoticeText" aria-live="polite">
       <ng-container *ngIf="restarting">Restarting…</ng-container>
-      <ng-container *ngIf="!restarting && waitingFor.length === 0">
+      <ng-container *ngIf="!restarting && waitingFor.length === 0 && waitingForSaves">
+        Waiting for the latest results to be saved, then restarting to finish updating.
+      </ng-container>
+      <ng-container *ngIf="!restarting && waitingFor.length === 0 && !waitingForSaves">
         The Interface Tool restarts in {{ secondsLeft }} {{ secondsLeft === 1 ? 'second' : 'seconds' }} to finish updating.
       </ng-container>
       <ng-container *ngIf="!restarting && waitingFor.length > 0">

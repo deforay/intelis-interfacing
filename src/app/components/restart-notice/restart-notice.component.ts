@@ -27,6 +27,8 @@ export class RestartNoticeComponent implements OnInit, OnDestroy {
   public secondsLeft = RestartNoticeComponent.COUNTDOWN_SECONDS;
   /** Instruments the restart is waiting for, once the count has ended. */
   public waitingFor: string[] = [];
+  /** True while results that arrived are still being saved. */
+  public waitingForSaves = false;
   public restarting = false;
 
   private waitedSeconds = 0;
@@ -71,6 +73,7 @@ export class RestartNoticeComponent implements OnInit, OnDestroy {
     this.secondsLeft = RestartNoticeComponent.COUNTDOWN_SECONDS;
     this.waitedSeconds = 0;
     this.waitingFor = [];
+    this.waitingForSaves = false;
     // The window is often hidden in the tray while instruments run.
     this.electronService.ipcRenderer?.invoke('show-main-window').catch(() => {});
     try {
@@ -91,7 +94,11 @@ export class RestartNoticeComponent implements OnInit, OnDestroy {
     }
     if (this.secondsLeft === 0) {
       this.waitingFor = this.connectionManager.instrumentsReceiving();
-      if (this.waitingFor.length === 0 || this.waitedSeconds >= RestartNoticeComponent.MAX_WAIT_SECONDS) {
+      // An instrument stops counting as sending before its results are
+      // written, so unsaved data holds the restart too.
+      this.waitingForSaves = this.waitingFor.length === 0 && this.connectionManager.hasUnsavedData();
+      const busy = this.waitingFor.length > 0 || this.waitingForSaves;
+      if (!busy || this.waitedSeconds >= RestartNoticeComponent.MAX_WAIT_SECONDS) {
         this.restartNow();
         return;
       }
